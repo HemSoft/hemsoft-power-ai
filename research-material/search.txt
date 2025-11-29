@@ -1,0 +1,22 @@
+Searching for the templates...
+Matches from template source: NuGet.org
+These templates matched your input: 'mcp'
+
+Template Name               Short Name              Language  Package Name / Owners                                                          Trusted  Downloads
+--------------------------  ----------------------  --------  -----------------------------------------------------------------------------  -------  ---------
+McpToolTrigger              mcptooltrigger          [C#]      Microsoft.Azure.Functions.Worker.ItemTemplates / azure-sdk, Microsoft             ✓      149,875k
+McpToolTrigger              mcptooltrigger          [C#]      Microsoft.Azure.WebJobs.ItemTemplates / azure-sdk, Microsoft                      ✓      132,455k
+McpToolTrigger              mcptooltrigger          [C#]      Microsoft.Azure.Functions.Worker.ItemTemplates.NetCore / azure-sdk, Microsoft     ✓      34,891k 
+McpToolTrigger              mcptooltrigger          [C#]      Microsoft.Azure.Functions.Worker.ItemTemplates.NetFx / azure-sdk, Microsoft       ✓      11,082k 
+COA MCP Server              mcp-server              [C#]      COA.Mcp.Framework.Templates / anortham                                                      4k   
+Cumcord F# plugin           cumcplug                F#        Fable.Cumcord.Templates / cumglue                                                           1k   
+ObsidianMC Plugin Template  obsidianmcplugin        [C#]      Obsidian.PluginTemplates / ObsidianMC                                                       1k   
+MCP C# Server               http-mcp-csharp-server  [C#]      Murmur8.McpServer.Template / rosschambers                                                  <1k   
+MCP Server (Stdio Trans...  mcpserver-stdio-fba     [C#]      FbaTemplates / rkttu                                                                       <1k   
+Revit MCP Standard Temp...  revit-mcp-standard      [C#]      revit-mcp-templates / imfour                                                               <1k   
+
+
+To use the template, run the following command to install the package:
+   dotnet new install [<package>...]
+Example:
+   dotnet new install Microsoft.Azure.Functions.Worker.ItemTemplates

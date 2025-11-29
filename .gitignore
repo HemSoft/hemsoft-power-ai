@@ -1,0 +1,25 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## NuGet
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+## Visual Studio
+.vs/
+*.rsuser
+*.csproj.user
+
+## JetBrains Rider
+.idea/
+*.sln.iml
+
+## User-specific files
+appsettings.Development.json
+appsettings.Local.json

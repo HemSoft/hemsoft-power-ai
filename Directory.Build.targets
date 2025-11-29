@@ -1,0 +1,54 @@
+<Project>
+  <PropertyGroup>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+  </PropertyGroup>
+
+  <!-- Git commit count target - only runs if RevisionNumber not already set by CI/CD -->
+  <Target Name="GetGitCommitCount" BeforeTargets="BeforeBuild;BeforeCompile;CoreCompile" Condition="'$(RevisionNumber)' == '0'">
+    <!-- Get git commit count to use as revision number for local builds -->
+    <Exec Command="git rev-list --count HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="Low" ContinueOnError="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitCount" />
+    </Exec>
+
+    <!-- Get short commit hash for local builds -->
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="Low" ContinueOnError="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitHash" />
+    </Exec>
+
+    <PropertyGroup>
+      <!-- Override defaults from Directory.Build.props with actual git values if available -->
+      <RevisionNumber Condition="'$(GitCommitCount)' != '' AND '$(GitCommitCount)' != '0'">$(GitCommitCount)</RevisionNumber>
+      <SourceRevisionId Condition="'$(GitCommitHash)' != ''">$(GitCommitHash)</SourceRevisionId>
+
+      <!-- Rebuild version with git values: 1.0.{commit-count} -->
+      <VersionPrefix>1.0.$(RevisionNumber)</VersionPrefix>
+      <AssemblyVersion>1.0.$(RevisionNumber)</AssemblyVersion>
+      <FileVersion>1.0.$(RevisionNumber)</FileVersion>
+      <InformationalVersion>1.0.$(RevisionNumber)+$(SourceRevisionId)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+
+  <!-- Markdown Linting Target -->
+  <Target Name="LintMarkdown" BeforeTargets="BeforeBuild" Condition="Exists('$(MSBuildThisFileDirectory)package.json')">
+    <Message Text="Running Markdown Linting..." Importance="high" />
+    <!-- Check if node_modules exists, if not run npm install -->
+    <Exec Command="npm install" Condition="!Exists('$(MSBuildThisFileDirectory)node_modules')" ContinueOnError="false" />
+    <!-- Run the lint command -->
+    <Exec Command="npm run lint:md" ContinueOnError="false">
+      <Output TaskParameter="ExitCode" PropertyName="LintExitCode" />
+    </Exec>
+    <Error Text="Markdown linting failed. See output for details." Condition="'$(LintExitCode)' != '0'" />
+  </Target>
+
+  <!-- Quality Checks Target -->
+  <Target Name="RunQualityChecks" AfterTargets="Build" Condition="'$(MSBuildProjectName)' == 'Relias.Assistant.Console'">
+    <Message Text="Running Quality Checks..." Importance="high" />
+    <Exec Command="pwsh -File &quot;$(MSBuildThisFileDirectory)scripts/check-quality.ps1&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" ContinueOnError="false" StandardOutputImportance="High" StandardErrorImportance="High" />
+  </Target>
+
+  <!-- Run Tests After Build for Test Projects (includes coverage threshold enforcement) -->
+  <Target Name="RunTestsAfterBuild" AfterTargets="Build" Condition="'$(IsTestProject)' == 'true' AND '$(RunTestsOnBuild)' != 'false'">
+    <Message Text="Running tests with coverage enforcement..." Importance="high" />
+    <Exec Command="dotnet test &quot;$(MSBuildProjectFullPath)&quot; --no-build --nologo -v q" ContinueOnError="false" />
+  </Target>
+</Project>

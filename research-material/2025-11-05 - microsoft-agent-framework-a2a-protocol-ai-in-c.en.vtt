@@ -1,0 +1,314 @@
+WEBVTT
+
+00:00.000 --> 00:06.000
+Hi, and welcome to this ARNC Sharp video on the Microsoft Agent Framework.
+
+00:06.000 --> 00:15.000
+Today we're going to look into the A2A protocol, which is something Google has made, where we have multiple agents talking to each other.
+
+00:15.000 --> 00:21.000
+Before we jump into the code, let's quickly talk a little about what this is.
+
+00:21.000 --> 00:36.000
+If you are familiar with MCPs, A2A is very similar to MCPs, but there is a bit more of intelligence in here.
+
+00:36.000 --> 00:50.000
+Also, if you have seen my video about an agent calling another agent as a tool, that would be beneficial in order to understand this, because that is essentially what's happening.
+
+00:50.000 --> 00:55.000
+But where the other agent is just remote.
+
+00:55.000 --> 01:02.000
+But what happens is you have a local app and you know a URL for another agent.
+
+01:02.000 --> 01:10.000
+That is something called an agent card. So the remote agent has some kind of skills.
+
+01:10.000 --> 01:18.000
+It's normally tools, but it could also be that it's very good at something or use a special model or something like that.
+
+01:18.000 --> 01:36.000
+So it's just a normal agent, and it has these tools, and it exposes that to the local app as what is called an agent card, where it tells, I'm this, I'm good at this, you can use me for this, and so on.
+
+01:36.000 --> 01:46.000
+It's sort of like a business card if you met a person where you could find information about what they can do and how they can help and what to talk with them.
+
+01:46.000 --> 01:51.000
+So a little like MCPs list tools.
+
+01:51.000 --> 02:03.000
+And then the local app can use these tools over here through this connection, as if they were connected directly to it itself.
+
+02:03.000 --> 02:08.000
+And what we're about to see in code is of course happening all on my machine.
+
+02:08.000 --> 02:19.000
+But the important thing to remember is that these two machines can be in different parts of the world because they are just talking via a URL.
+
+02:19.000 --> 02:26.000
+So let's jump in and see it in action.
+
+02:26.000 --> 02:35.000
+So in the sample repo, we have agent to agent here and we have a server and a client.
+
+02:35.000 --> 02:41.000
+And first, I will just show it running, and then we will go through the code.
+
+02:41.000 --> 02:45.000
+And in order to run it, I need to run both systems.
+
+02:45.000 --> 02:55.000
+And for that reason, I went into this setup configuration here and set up that these two start at the same time.
+
+02:55.000 --> 03:03.000
+So if I run it and arrange a bunch of screens here so we can see it,
+
+03:03.000 --> 03:11.000
+then we have the server here and here we have the client.
+
+03:11.000 --> 03:18.000
+And if I ask it, in this case, it knows about some files on my machine.
+
+03:18.000 --> 03:24.000
+So if we find the files up here, you can see there's 10 files in this folder.
+
+03:24.000 --> 03:30.000
+So I can ask how many files.
+
+03:30.000 --> 03:38.000
+These files are the same as you saw in my function calling scenario, and it can see there's 10 files.
+
+03:38.000 --> 03:53.000
+And we can go in and say delete the orange.txt file.
+
+03:53.000 --> 03:55.000
+If we do that, it removes it over here.
+
+03:55.000 --> 03:59.000
+So we are about to get information, but also actions.
+
+03:59.000 --> 04:04.000
+And over here, things are happening on behalf of this.
+
+04:04.000 --> 04:16.000
+And had this just been one agent with the skills, meaning had it been down here in features, our normal function calling,
+
+04:16.000 --> 04:23.000
+it would just have been a tool that we gave to a system, and that would be it.
+
+04:23.000 --> 04:26.000
+But now it's happening over a URL.
+
+04:26.000 --> 04:36.000
+And again, the important part is to think the server here could be in a completely different part of the world while the client would be on my machine.
+
+04:36.000 --> 04:41.000
+But let's see how it's implemented.
+
+04:41.000 --> 04:50.000
+So let's first look at the server, because without the server, we can't call the client.
+
+04:50.000 --> 05:01.000
+So first up, we are using a new NuGet packet we haven't used before, and we're using AI hosting A2A ASP.NET Core.
+
+05:01.000 --> 05:10.000
+And since this is a console app, we're still making it work as ASP.NET Core, so we are actually exposing a URL.
+
+05:10.000 --> 05:23.000
+So when I run it and show you the server, you can see we get this URL up here, just like if it had been a web API or whatever.
+
+05:23.000 --> 05:31.000
+And as well, we also get something called well-known 18-card JSON.
+
+05:31.000 --> 05:43.000
+And the way it works is we go to our server and we do the normal business part as we do with any agents we have done so far.
+
+05:43.000 --> 05:49.000
+We take the Azure OpenAI client. In this case, we are grabbing the different tools.
+
+05:49.000 --> 05:55.000
+Again, exactly the same as we did down here in the tool calling advanced, which there's a separate video on.
+
+05:55.000 --> 06:03.000
+And then we're just making an agent, just like we do, and we give them these tools.
+
+06:03.000 --> 06:09.000
+And we set up a little function calling middleware so we can see that the tools are being called.
+
+06:09.000 --> 06:15.000
+You don't technically need tools here. It could be that it was very good at understanding something.
+
+06:15.000 --> 06:23.000
+It was hooked up to a vector store. It could be something that you would like to expose to the world
+
+06:23.000 --> 06:30.000
+through something more intelligent than just bringing raw data back.
+
+06:30.000 --> 06:35.000
+But then we begin with the agent part. And the agent part, not really here.
+
+06:35.000 --> 06:41.000
+We're just setting up that ASP Netcore can have a URL.
+
+06:41.000 --> 06:46.000
+And then we're building something called an agent card. Again, the agent's business card.
+
+06:46.000 --> 06:51.000
+So this is what is being exchanged between the two, the client and the server.
+
+06:51.000 --> 06:59.000
+So we tell, hey, I'm an agent. I'm called files agent. I can handle requests related to files.
+
+06:59.000 --> 07:07.000
+I'm version 1.0. My input modes are text and my output modes are text.
+
+07:07.000 --> 07:12.000
+Again, this protocol has lots and lots of other features, authentication, and so on.
+
+07:12.000 --> 07:19.000
+But we're just diving into the basics here. We're not streaming. We're just giving data fullback.
+
+07:19.000 --> 07:26.000
+And we're not sending any notifications because something can also be long running and such things like that.
+
+07:26.000 --> 07:34.000
+But we have one skill, which we call an agent skill, which is just that we are file experts.
+
+07:34.000 --> 07:40.000
+And we can ask, do the questions about the files.
+
+07:40.000 --> 07:46.000
+We can give some tags. So different agent cards could be categorized and stuff.
+
+07:46.000 --> 07:51.000
+And we give a small example on how we work.
+
+07:51.000 --> 07:55.000
+And then we give the URL that we need to be.
+
+07:55.000 --> 08:04.000
+And the tools themselves are fairly simple. It's just create folder, delete folder, just normal C sharp code.
+
+08:04.000 --> 08:11.000
+And again, if you want to know about this, see the tool calling advanced for full details.
+
+08:11.000 --> 08:19.000
+The final thing we do is just like a map get, map post in a minimal API, we do a map A to A.
+
+08:19.000 --> 08:28.000
+And we tell, this is the agent we are exposing. Here's the part we are exposing it, meaning just the root.
+
+08:28.000 --> 08:34.000
+Here's the agent card. And here's the well-known agent card.
+
+08:34.000 --> 08:40.000
+So it knows this information when it needs to work.
+
+08:40.000 --> 08:48.000
+And then we're just running, meaning we're starting the little mini web server in our console app here.
+
+08:48.000 --> 08:54.000
+On the client side, it is fairly simple.
+
+08:54.000 --> 09:01.000
+In here, we instead use the A to A instead of hosting A to A because we are the consumer.
+
+09:01.000 --> 09:07.000
+And we are going to start because I'm starting at the same time.
+
+09:07.000 --> 09:16.000
+I'm just waiting one second just to be sure that the server is ready to begin to be consumed by the client.
+
+09:16.000 --> 09:22.000
+Then we do something called an A to A card resolver where we take the URL.
+
+09:22.000 --> 09:27.000
+Again, this could be a remote URL. And we get that.
+
+09:27.000 --> 09:34.000
+And the agent framework just gives us and give me that as an AI agent and we're done.
+
+09:34.000 --> 09:40.000
+Because then we have an AI agent, we could begin to use that as such.
+
+09:40.000 --> 09:50.000
+But what we're doing is we're giving it as a tool to an agent that we control over on our side.
+
+09:50.000 --> 10:00.000
+That agent is just like normal. We give it instructions and like normal.
+
+10:00.000 --> 10:09.000
+And we just make a chat loop. So nothing over here is different other than this, which we then give as a tool.
+
+10:09.000 --> 10:14.000
+Beyond that, it's just normal agent framework like we normally do.
+
+10:14.000 --> 10:30.000
+So there's not much to this. It's just this exchange between the two that this running in one process can get an agent that can be used as skills in another process.
+
+10:31.000 --> 10:47.000
+So when we again look at it here and the server, try to get them a little more side by side here.
+
+10:47.000 --> 10:51.000
+This and the files.
+
+10:55.000 --> 11:12.000
+Then we could, for example, say group the files into folders based on their color.
+
+11:12.000 --> 11:20.000
+So now it begins to work over here. It found the root folder.
+
+11:20.000 --> 11:26.000
+It found the content of each file and so on.
+
+11:26.000 --> 11:34.000
+And it wants us to confirm where you want to proceed.
+
+11:34.000 --> 11:40.000
+But that is just AI. Had it been in the same root, then the same thing would have happened.
+
+11:40.000 --> 11:49.000
+But right now it's doing its work and putting in banana and lemon and pear into the yellow and so on.
+
+11:49.000 --> 11:56.000
+So it's just AI. And again, it's just as if we had one agent with that tool.
+
+11:56.000 --> 12:04.000
+But the cool thing is, of course, that these are in two different locations in the world.
+
+12:04.000 --> 12:08.000
+In my case, it's two different processes that talk with each other.
+
+12:08.000 --> 12:16.000
+But it could have been two different servers, one sitting in the US and one sitting in Europe talking to each other.
+
+12:16.000 --> 12:23.000
+And again, this sounds very much like MCP, but you have more.
+
+12:23.000 --> 12:33.000
+You could technically just make a tool called files tool in MCP and have an AI work behind the scenes.
+
+12:33.000 --> 12:38.000
+But it's not really meant for that. This is more meant for that. It's bigger things.
+
+12:38.000 --> 12:41.000
+It's more advanced things that are happening.
+
+12:41.000 --> 12:49.000
+So if you're using one or the other, I will probably use MCP more than A2A.
+
+12:49.000 --> 12:53.000
+But I can see a world where A2A makes sense.
+
+12:53.000 --> 12:58.000
+So that is everything. Very simple to do.
+
+12:58.000 --> 13:07.000
+A little higher complex topic, but behind the scenes, it's actually very simple that it's just these two lines of code
+
+13:07.000 --> 13:10.000
+that give us an agent that we can use as a tool.
+
+13:10.000 --> 13:13.000
+That's it. Thank you for attending.
+
