@@ -1,16 +1,31 @@
+// <copyright file="FileTools.cs" company="HemSoft">
+// Copyright © 2025 HemSoft
+// </copyright>
+
 namespace AgentDemo.Console.Tools;
 
 using System.ComponentModel;
+using System.IO;
 
-public static class FileTools
+/// <summary>
+/// Provides file system tools for the AI agent.
+/// </summary>
+internal static class FileTools
 {
+    /// <summary>
+    /// Lists all files in the specified directory path.
+    /// </summary>
+    /// <param name="path">The directory path to list files from.</param>
+    /// <returns>An array of file names in the directory.</returns>
     [Description("Lists all files in the specified directory path and returns their names")]
     public static string[] ListFiles(string path)
     {
         System.Console.WriteLine($"[Tool] ListFiles called with path: {path}");
 
         if (!Directory.Exists(path))
+        {
             return [$"Directory not found: {path}"];
+        }
 
         var files = Directory.GetFiles(path)
             .Select(Path.GetFileName)
@@ -22,15 +37,20 @@ public static class FileTools
         return files;
     }
 
+    /// <summary>
+    /// Counts the number of files in the specified directory.
+    /// </summary>
+    /// <param name="path">The directory path to count files in.</param>
+    /// <returns>The number of files, or -1 if the directory does not exist.</returns>
     [Description("Counts the number of files in the specified directory path")]
-    public static int CountFiles(string path)
-    {
-        if (!Directory.Exists(path))
-            return -1;
+    public static int CountFiles(string path) =>
+        !Directory.Exists(path) ? -1 : Directory.GetFiles(path).Length;
 
-        return Directory.GetFiles(path).Length;
-    }
-
+    /// <summary>
+    /// Creates a new folder at the specified path.
+    /// </summary>
+    /// <param name="path">The path where the folder should be created.</param>
+    /// <returns>A message indicating success or failure.</returns>
     [Description("Creates a new folder at the specified path")]
     public static string CreateFolder(string path)
     {
@@ -39,17 +59,28 @@ public static class FileTools
             Directory.CreateDirectory(path);
             return $"Folder created: {path}";
         }
-        catch (Exception ex)
+        catch (UnauthorizedAccessException ex)
         {
-            return $"Failed to create folder: {ex.Message}";
+            return $"Access denied: {ex.Message}";
+        }
+        catch (IOException ex)
+        {
+            return $"IO error: {ex.Message}";
         }
     }
 
+    /// <summary>
+    /// Gets information about a file.
+    /// </summary>
+    /// <param name="filePath">The path to the file.</param>
+    /// <returns>A string containing file name, size, and last modified date.</returns>
     [Description("Gets information about a file including size and last modified date")]
     public static string GetFileInfo(string filePath)
     {
         if (!File.Exists(filePath))
+        {
             return $"File not found: {filePath}";
+        }
 
         var info = new FileInfo(filePath);
         return $"Name: {info.Name}, Size: {info.Length} bytes, Modified: {info.LastWriteTime}";
