@@ -32,97 +32,91 @@ public sealed class FileToolsTests : IDisposable
     }
 
     /// <summary>
-    /// Verifies ListFiles returns files in directory.
+    /// Verifies QueryFileSystem list mode returns files.
     /// </summary>
     [Fact]
-    public void ListFilesReturnsFilesInDirectory()
+    public void QueryFileSystemListReturnsFiles()
     {
         // Arrange
         File.WriteAllText(Path.Combine(this.testDir, "test1.txt"), "content1");
         File.WriteAllText(Path.Combine(this.testDir, "test2.txt"), "content2");
 
         // Act
-        var result = FileTools.ListFiles(this.testDir);
+        var result = FileTools.QueryFileSystem("list", this.testDir);
 
         // Assert
-        Assert.Contains("test1.txt", result);
-        Assert.Contains("test2.txt", result);
+        Assert.Contains("test1.txt", result, StringComparison.Ordinal);
+        Assert.Contains("test2.txt", result, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// Verifies ListFiles returns error for non-existent path.
+    /// Verifies QueryFileSystem list mode returns empty for empty directory.
     /// </summary>
     [Fact]
-    public void ListFilesNonExistentPathReturnsError()
+    public void QueryFileSystemListEmptyDirectory()
     {
         // Act
-        var result = FileTools.ListFiles(Path.Combine(this.testDir, "nonexistent"));
+        var result = FileTools.QueryFileSystem("list", this.testDir);
 
         // Assert
-        Assert.Single(result);
-        Assert.Contains("not found", result[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Empty directory", result);
     }
 
     /// <summary>
-    /// Verifies CountFiles returns correct count.
+    /// Verifies QueryFileSystem list mode handles non-existent path.
     /// </summary>
     [Fact]
-    public void CountFilesReturnsCorrectCount()
+    public void QueryFileSystemListNonExistentPath()
+    {
+        // Act
+        var result = FileTools.QueryFileSystem("list", Path.Combine(this.testDir, "nonexistent"));
+
+        // Assert
+        Assert.Contains("not found", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Verifies QueryFileSystem count mode returns correct count.
+    /// </summary>
+    [Fact]
+    public void QueryFileSystemCountReturnsCount()
     {
         // Arrange
         File.WriteAllText(Path.Combine(this.testDir, "file1.txt"), "content");
         File.WriteAllText(Path.Combine(this.testDir, "file2.txt"), "content");
-        File.WriteAllText(Path.Combine(this.testDir, "file3.txt"), "content");
 
         // Act
-        var result = FileTools.CountFiles(this.testDir);
+        var result = FileTools.QueryFileSystem("count", this.testDir);
 
         // Assert
-        Assert.Equal(3, result);
+        Assert.Equal("2 files", result);
     }
 
     /// <summary>
-    /// Verifies CountFiles returns -1 for non-existent path.
+    /// Verifies QueryFileSystem count mode handles non-existent path.
     /// </summary>
     [Fact]
-    public void CountFilesNonExistentPathReturnsNegativeOne()
+    public void QueryFileSystemCountNonExistentPath()
     {
         // Act
-        var result = FileTools.CountFiles(Path.Combine(this.testDir, "nonexistent"));
+        var result = FileTools.QueryFileSystem("count", Path.Combine(this.testDir, "nonexistent"));
 
         // Assert
-        Assert.Equal(-1, result);
+        Assert.Contains("not found", result, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
-    /// Verifies CreateFolder creates a new folder.
+    /// Verifies QueryFileSystem info mode returns file information.
     /// </summary>
     [Fact]
-    public void CreateFolderCreatesNewFolder()
-    {
-        // Arrange
-        var newFolder = Path.Combine(this.testDir, "newfolder");
-
-        // Act
-        var result = FileTools.CreateFolder(newFolder);
-
-        // Assert
-        Assert.Contains("Created", result, StringComparison.OrdinalIgnoreCase);
-        Assert.True(Directory.Exists(newFolder));
-    }
-
-    /// <summary>
-    /// Verifies GetFileInfo returns file information.
-    /// </summary>
-    [Fact]
-    public void GetFileInfoReturnsFileInformation()
+    public void QueryFileSystemInfoReturnsFileInfo()
     {
         // Arrange
         var filePath = Path.Combine(this.testDir, "info.txt");
         File.WriteAllText(filePath, "test content");
 
         // Act
-        var result = FileTools.GetFileInfo(filePath);
+        var result = FileTools.QueryFileSystem("info", filePath);
 
         // Assert
         Assert.Contains("info.txt", result, StringComparison.Ordinal);
@@ -130,15 +124,331 @@ public sealed class FileToolsTests : IDisposable
     }
 
     /// <summary>
-    /// Verifies GetFileInfo returns error for non-existent file.
+    /// Verifies QueryFileSystem info mode handles non-existent file.
     /// </summary>
     [Fact]
-    public void GetFileInfoNonExistentFileReturnsError()
+    public void QueryFileSystemInfoNonExistentFile()
     {
         // Act
-        var result = FileTools.GetFileInfo(Path.Combine(this.testDir, "nonexistent.txt"));
+        var result = FileTools.QueryFileSystem("info", Path.Combine(this.testDir, "nonexistent.txt"));
 
         // Assert
         Assert.Contains("not found", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Verifies QueryFileSystem returns error for unknown mode.
+    /// </summary>
+    [Fact]
+    public void QueryFileSystemUnknownMode()
+    {
+        // Act
+        var result = FileTools.QueryFileSystem("invalid", this.testDir);
+
+        // Assert
+        Assert.Contains("Unknown mode", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem mkdir creates folder.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemMkdirCreatesFolder()
+    {
+        // Arrange
+        var newFolder = Path.Combine(this.testDir, "newfolder");
+
+        // Act
+        var result = FileTools.ModifyFileSystem("mkdir", newFolder);
+
+        // Assert
+        Assert.Contains("Created", result, StringComparison.OrdinalIgnoreCase);
+        Assert.True(Directory.Exists(newFolder));
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem mkdir handles invalid path.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemMkdirInvalidPath()
+    {
+        // Arrange
+        var invalidPath = Path.Combine(this.testDir, "invalid<>:\"|?*path");
+
+        // Act
+        var result = FileTools.ModifyFileSystem("mkdir", invalidPath);
+
+        // Assert
+        Assert.Contains("Error creating", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem delete removes file.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemDeleteRemovesFile()
+    {
+        // Arrange
+        var filePath = Path.Combine(this.testDir, "todelete.txt");
+        File.WriteAllText(filePath, "content");
+
+        // Act
+        var result = FileTools.ModifyFileSystem("delete", filePath);
+
+        // Assert
+        Assert.Contains("Deleted file", result, StringComparison.Ordinal);
+        Assert.False(File.Exists(filePath));
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem delete removes directory.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemDeleteRemovesDirectory()
+    {
+        // Arrange
+        var dirPath = Path.Combine(this.testDir, "todelete");
+        Directory.CreateDirectory(dirPath);
+
+        // Act
+        var result = FileTools.ModifyFileSystem("delete", dirPath);
+
+        // Assert
+        Assert.Contains("Deleted directory", result, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(dirPath));
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem delete handles non-existent path.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemDeleteNonExistent()
+    {
+        // Act
+        var result = FileTools.ModifyFileSystem("delete", Path.Combine(this.testDir, "nonexistent"));
+
+        // Assert
+        Assert.Contains("Not found", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem move moves file.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemMoveMovesFile()
+    {
+        // Arrange
+        var source = Path.Combine(this.testDir, "source.txt");
+        var dest = Path.Combine(this.testDir, "dest.txt");
+        File.WriteAllText(source, "content");
+
+        // Act
+        var result = FileTools.ModifyFileSystem("move", source, dest);
+
+        // Assert
+        Assert.Contains("Moved file", result, StringComparison.Ordinal);
+        Assert.False(File.Exists(source));
+        Assert.True(File.Exists(dest));
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem move requires destination.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemMoveRequiresDestination()
+    {
+        // Act
+        var result = FileTools.ModifyFileSystem("move", this.testDir);
+
+        // Assert
+        Assert.Contains("Destination required", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem copy copies file.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemCopyCopiesFile()
+    {
+        // Arrange
+        var source = Path.Combine(this.testDir, "source.txt");
+        var dest = Path.Combine(this.testDir, "copy.txt");
+        File.WriteAllText(source, "content");
+
+        // Act
+        var result = FileTools.ModifyFileSystem("copy", source, dest);
+
+        // Assert
+        Assert.Contains("Copied file", result, StringComparison.Ordinal);
+        Assert.True(File.Exists(source));
+        Assert.True(File.Exists(dest));
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem copy requires destination.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemCopyRequiresDestination()
+    {
+        // Act
+        var result = FileTools.ModifyFileSystem("copy", this.testDir);
+
+        // Assert
+        Assert.Contains("Destination required", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem copy handles non-existent source.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemCopyNonExistentSource()
+    {
+        // Act
+        var result = FileTools.ModifyFileSystem("copy", Path.Combine(this.testDir, "nonexistent"), "dest");
+
+        // Assert
+        Assert.Contains("Source not found", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem copy handles directory (not supported).
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemCopyDirectoryNotSupported()
+    {
+        // Arrange
+        var sourceDir = Path.Combine(this.testDir, "sourcedir");
+        Directory.CreateDirectory(sourceDir);
+
+        // Act
+        var result = FileTools.ModifyFileSystem("copy", sourceDir, "dest");
+
+        // Assert
+        Assert.Contains("Directory copy not supported", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem move handles non-existent source.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemMoveNonExistentSource()
+    {
+        // Act
+        var result = FileTools.ModifyFileSystem("move", Path.Combine(this.testDir, "nonexistent"), "dest");
+
+        // Assert
+        Assert.Contains("Source not found", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem move moves directory.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemMoveMovesDirectory()
+    {
+        // Arrange
+        var sourceDir = Path.Combine(this.testDir, "sourcedir");
+        var destDir = Path.Combine(this.testDir, "destdir");
+        Directory.CreateDirectory(sourceDir);
+
+        // Act
+        var result = FileTools.ModifyFileSystem("move", sourceDir, destDir);
+
+        // Assert
+        Assert.Contains("Moved directory", result, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(sourceDir));
+        Assert.True(Directory.Exists(destDir));
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem move handles IO error (destination exists).
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemMoveDestinationExists()
+    {
+        // Arrange - create source and destination with same name
+        var source = Path.Combine(this.testDir, "movesource.txt");
+        var dest = Path.Combine(this.testDir, "movedest.txt");
+        File.WriteAllText(source, "source");
+        File.WriteAllText(dest, "dest");
+
+        // Act
+        var result = FileTools.ModifyFileSystem("move", source, dest);
+
+        // Assert
+        Assert.Contains("Error moving", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem copy handles IO error (invalid destination).
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemCopyInvalidDestination()
+    {
+        // Arrange
+        var source = Path.Combine(this.testDir, "copysource.txt");
+        File.WriteAllText(source, "content");
+        var invalidDest = Path.Combine(this.testDir, "invalid<>:\"|?*dest.txt");
+
+        // Act
+        var result = FileTools.ModifyFileSystem("copy", source, invalidDest);
+
+        // Assert
+        Assert.Contains("Error copying", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem delete handles IO error (file in use - simulated via invalid path).
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemDeleteInvalidPath()
+    {
+        // Arrange - use path that will cause IO error on some systems
+        var invalidPath = "CON"; // Reserved Windows device name
+
+        // Act
+        var result = FileTools.ModifyFileSystem("delete", invalidPath);
+
+        // Assert - should return "Not found" since reserved names don't exist as files
+        Assert.Contains("Not found", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem returns error for unknown mode.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemUnknownMode()
+    {
+        // Act
+        var result = FileTools.ModifyFileSystem("invalid", this.testDir);
+
+        // Assert
+        Assert.Contains("Unknown mode", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies FormatError handles UnauthorizedAccessException.
+    /// </summary>
+    [Fact]
+    public void FormatErrorUnauthorizedAccessException()
+    {
+        // Act
+        var result = FileTools.FormatError("creating", "/test/path", new UnauthorizedAccessException());
+
+        // Assert
+        Assert.Equal("Access denied: /test/path", result);
+    }
+
+    /// <summary>
+    /// Verifies FormatError handles IOException.
+    /// </summary>
+    [Fact]
+    public void FormatErrorIOException()
+    {
+        // Act
+        var result = FileTools.FormatError("copying", "/test/path", new IOException("disk full"));
+
+        // Assert
+        Assert.Equal("Error copying /test/path: disk full", result);
     }
 }

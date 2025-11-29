@@ -1,4 +1,4 @@
-﻿// <copyright file="Program.cs" company="HemSoft">
+// <copyright file="Program.cs" company="HemSoft">
 // Copyright © 2025 HemSoft
 // </copyright>
 
@@ -16,10 +16,7 @@ using Spectre.Console;
 internal static class Program
 {
     private const string ModelId = "x-ai/grok-4.1-fast:free";
-
-#pragma warning disable S1075 // URIs should not be hardcoded
-    private const string DefaultOpenRouterUrl = "https://openrouter.ai/api/v1";
-#pragma warning restore S1075
+    private const string OpenRouterBaseUrlEnvVar = "OPENROUTER_BASE_URL";
 
     /// <summary>
     /// Application entry point.
@@ -27,16 +24,29 @@ internal static class Program
     /// <returns>Exit code (0 for success, 1 for configuration error).</returns>
     public static async Task<int> Main()
     {
-        var openRouterBaseUrl = new Uri(Environment.GetEnvironmentVariable("OPENROUTER_BASE_URL") ?? DefaultOpenRouterUrl);
+        var openRouterBaseUrlValue = Environment.GetEnvironmentVariable(OpenRouterBaseUrlEnvVar);
+        if (string.IsNullOrEmpty(openRouterBaseUrlValue))
+        {
+            AnsiConsole.Write(new Panel(
+                $"[red]Missing {OpenRouterBaseUrlEnvVar} environment variable.[/]\n\n" +
+                "Set it with:\n" +
+                $"[dim]$env:{OpenRouterBaseUrlEnvVar} = \"https://openrouter.ai/api/v1\"[/]")
+                .Header("[yellow]Configuration Error[/]")
+                .Border(BoxBorder.Rounded));
+            return 1;
+        }
+
+        var openRouterBaseUrl = new Uri(openRouterBaseUrlValue);
 
         // Validate API key
-        var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+        const string apiKeyEnvVar = "OPENROUTER_API_KEY";
+        var apiKey = Environment.GetEnvironmentVariable(apiKeyEnvVar);
         if (string.IsNullOrEmpty(apiKey))
         {
             AnsiConsole.Write(new Panel(
-                "[red]Missing OPENROUTER_API_KEY environment variable.[/]\n\n" +
+                $"[red]Missing {apiKeyEnvVar} environment variable.[/]\n\n" +
                 "Set it with:\n" +
-                "[dim]$env:OPENROUTER_API_KEY = \"your-api-key\"[/]")
+                $"[dim]$env:{apiKeyEnvVar} = \"your-api-key\"[/]")
                 .Header("[yellow]Configuration Error[/]")
                 .Border(BoxBorder.Rounded));
             return 1;
@@ -60,10 +70,8 @@ internal static class Program
         {
             Tools =
             [
-                AIFunctionFactory.Create(FileTools.ListFiles),
-                AIFunctionFactory.Create(FileTools.CountFiles),
-                AIFunctionFactory.Create(FileTools.CreateFolder),
-                AIFunctionFactory.Create(FileTools.GetFileInfo),
+                AIFunctionFactory.Create(TerminalTools.Execute),
+                AIFunctionFactory.Create(WebSearchTools.SearchAsync),
             ],
         };
 
@@ -149,7 +157,7 @@ internal static class Program
 
                 history.AddRange(response.Messages);
 
-                AnsiConsole.Write(new Panel(responseText)
+                AnsiConsole.Write(new Panel(Markup.Escape(responseText))
                     .Header("[green]Agent[/]")
                     .Border(BoxBorder.Rounded)
                     .BorderColor(Color.Green));

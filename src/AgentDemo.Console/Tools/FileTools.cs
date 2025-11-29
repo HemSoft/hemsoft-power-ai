@@ -13,80 +13,179 @@ using System.IO;
 internal static class FileTools
 {
     /// <summary>
-    /// Lists files in the specified directory (non-recursive).
+    /// Queries the file system for information.
     /// </summary>
-    /// <param name="path">The directory path.</param>
-    /// <returns>An array of file names.</returns>
-    [Description("Lists files in a directory (non-recursive, top-level only)")]
-    public static string[] ListFiles(string path)
+    /// <param name="mode">Operation mode: 'list' (files in dir), 'count' (file count), 'info' (file details).</param>
+    /// <param name="path">The file or directory path.</param>
+    /// <returns>Query result or error message.</returns>
+    [Description("Query file system. Modes: 'list' (files in directory), 'count' (file count in directory), 'info' (file size/date)")]
+    public static string QueryFileSystem(string mode, string path)
     {
-        System.Console.WriteLine($"[Tool] ListFiles: {path}");
+        System.Console.WriteLine($"[Tool] QueryFileSystem: {mode} {path}");
 
-        return !Directory.Exists(path)
-            ? [$"Directory not found: {path}"]
-            : [.. Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly)
-                .Take(100)
-                .Select(Path.GetFileName)
-                .Where(f => f is not null)
-                .Cast<string>()];
+        return mode?.ToUpperInvariant() switch
+        {
+            "LIST" => ListFiles(path),
+            "COUNT" => CountFiles(path),
+            "INFO" => GetFileInfo(path),
+            _ => $"Unknown mode '{mode}'. Use: list, count, info",
+        };
     }
 
     /// <summary>
-    /// Counts files in the specified directory (non-recursive).
+    /// Modifies the file system.
     /// </summary>
-    /// <param name="path">The directory path.</param>
-    /// <returns>The file count, or -1 if not found.</returns>
-    [Description("Counts files in a directory (non-recursive, top-level only)")]
-    public static int CountFiles(string path)
+    /// <param name="mode">Operation mode: 'mkdir' (create folder), 'delete' (remove file/folder), 'move', 'copy'.</param>
+    /// <param name="path">The source path.</param>
+    /// <param name="destination">The destination path (for move/copy operations).</param>
+    /// <returns>Result message or error.</returns>
+    [Description("Modify file system. Modes: 'mkdir' (create folder), 'delete' (remove), 'move', 'copy'. Destination required for move/copy.")]
+    public static string ModifyFileSystem(string mode, string path, string? destination = null)
     {
-        System.Console.WriteLine($"[Tool] CountFiles: {path}");
+        System.Console.WriteLine($"[Tool] ModifyFileSystem: {mode} {path} -> {destination}");
 
-        return !Directory.Exists(path)
-            ? -1
-            : Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly).Count();
+        return mode?.ToUpperInvariant() switch
+        {
+            "MKDIR" => CreateFolder(path),
+            "DELETE" => Delete(path),
+            "MOVE" => Move(path, destination),
+            "COPY" => Copy(path, destination),
+            _ => $"Unknown mode '{mode}'. Use: mkdir, delete, move, copy",
+        };
     }
 
     /// <summary>
-    /// Creates a folder at the specified path.
+    /// Formats a file operation error message.
     /// </summary>
-    /// <param name="path">The folder path to create.</param>
-    /// <returns>Result message.</returns>
-    [Description("Creates a new folder at the specified path")]
-    public static string CreateFolder(string path)
-    {
-        System.Console.WriteLine($"[Tool] CreateFolder: {path}");
+    /// <param name="operation">The operation that failed.</param>
+    /// <param name="path">The path involved.</param>
+    /// <param name="ex">The exception that occurred.</param>
+    /// <returns>Formatted error message.</returns>
+    internal static string FormatError(string operation, string path, Exception ex) =>
+        ex is UnauthorizedAccessException
+            ? $"Access denied: {path}"
+            : $"Error {operation} {path}: {ex.Message}";
 
+    private static string ListFiles(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return $"Directory not found: {path}";
+        }
+
+        var files = Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly)
+            .Take(100)
+            .Select(Path.GetFileName)
+            .Where(f => f is not null);
+
+        var fileList = string.Join(", ", files);
+        return string.IsNullOrEmpty(fileList) ? "Empty directory" : fileList;
+    }
+
+    private static string CountFiles(string path) =>
+        !Directory.Exists(path)
+            ? $"Directory not found: {path}"
+            : $"{Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly).Count()} files";
+
+    private static string GetFileInfo(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return $"File not found: {path}";
+        }
+
+        var info = new FileInfo(path);
+        return $"{info.Name} | {info.Length:N0} bytes | Modified: {info.LastWriteTime:g}";
+    }
+
+    private static string CreateFolder(string path)
+    {
         try
         {
             Directory.CreateDirectory(path);
             return $"Created: {path}";
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
-            return $"Access denied: {path}";
-        }
-        catch (IOException ex)
-        {
-            return $"Error: {ex.Message}";
+            return FormatError("creating", path, ex);
         }
     }
 
-    /// <summary>
-    /// Gets basic file information.
-    /// </summary>
-    /// <param name="filePath">The file path.</param>
-    /// <returns>File info string.</returns>
-    [Description("Gets file information (name, size, modified date)")]
-    public static string GetFileInfo(string filePath)
+    private static string Delete(string path)
     {
-        System.Console.WriteLine($"[Tool] GetFileInfo: {filePath}");
-
-        if (!File.Exists(filePath))
+        try
         {
-            return $"Not found: {filePath}";
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                return $"Deleted file: {path}";
+            }
+
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+                return $"Deleted directory: {path}";
+            }
+
+            return $"Not found: {path}";
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return FormatError("deleting", path, ex);
+        }
+    }
+
+    private static string Move(string source, string? destination)
+    {
+        if (string.IsNullOrEmpty(destination))
+        {
+            return "Destination required for move operation";
         }
 
-        var info = new FileInfo(filePath);
-        return $"{info.Name} | {info.Length:N0} bytes | {info.LastWriteTime:g}";
+        try
+        {
+            if (File.Exists(source))
+            {
+                File.Move(source, destination);
+                return $"Moved file: {source} -> {destination}";
+            }
+
+            if (Directory.Exists(source))
+            {
+                Directory.Move(source, destination);
+                return $"Moved directory: {source} -> {destination}";
+            }
+
+            return $"Source not found: {source}";
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return FormatError("moving", source, ex);
+        }
+    }
+
+    private static string Copy(string source, string? destination)
+    {
+        if (string.IsNullOrEmpty(destination))
+        {
+            return "Destination required for copy operation";
+        }
+
+        try
+        {
+            if (File.Exists(source))
+            {
+                File.Copy(source, destination, overwrite: true);
+                return $"Copied file: {source} -> {destination}";
+            }
+
+            return Directory.Exists(source)
+                ? "Directory copy not supported. Use move or copy individual files."
+                : $"Source not found: {source}";
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return FormatError("copying", source, ex);
+        }
     }
 }
