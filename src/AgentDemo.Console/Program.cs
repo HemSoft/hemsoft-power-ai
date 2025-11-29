@@ -5,9 +5,16 @@
 namespace AgentDemo.Console;
 
 using System.ClientModel;
+
+using AgentDemo.Console.Agents;
+using AgentDemo.Console.Configuration;
 using AgentDemo.Console.Tools;
+
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+
 using OpenAI;
+
 using Spectre.Console;
 
 /// <summary>
@@ -21,8 +28,61 @@ internal static class Program
     /// <summary>
     /// Application entry point.
     /// </summary>
+    /// <param name="args">Command line arguments. Use 'spam' to run spam filter agent.</param>
     /// <returns>Exit code (0 for success, 1 for configuration error).</returns>
-    public static async Task<int> Main()
+    public static Task<int> Main(string[] args) =>
+        args.Length > 0 && args[0].Equals("spam", StringComparison.OrdinalIgnoreCase)
+            ? RunSpamFilterAgentAsync()
+            : RunInteractiveChatAsync();
+
+    private static async Task<int> RunSpamFilterAgentAsync()
+    {
+        // Load configuration
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            .Build();
+
+        var settings = new SpamFilterSettings();
+        configuration.GetSection(SpamFilterSettings.SectionName).Bind(settings);
+
+        using var agent = new SpamFilterAgent(settings);
+
+        using var cts = new CancellationTokenSource();
+        ConsoleCancelEventHandler cancelHandler = (_, e) =>
+        {
+            e.Cancel = true;
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // CTS already disposed, ignore
+            }
+
+            AnsiConsole.MarkupLine("\n[yellow]Cancellation requested...[/]");
+        };
+
+        System.Console.CancelKeyPress += cancelHandler;
+
+        try
+        {
+            await agent.RunAsync(cts.Token).ConfigureAwait(false);
+            return 0;
+        }
+        catch (OperationCanceledException)
+        {
+            AnsiConsole.MarkupLine("[yellow]Operation cancelled by user.[/]");
+            return 0;
+        }
+        finally
+        {
+            System.Console.CancelKeyPress -= cancelHandler;
+        }
+    }
+
+    private static async Task<int> RunInteractiveChatAsync()
     {
         var openRouterBaseUrlValue = Environment.GetEnvironmentVariable(OpenRouterBaseUrlEnvVar);
         if (string.IsNullOrEmpty(openRouterBaseUrlValue))
@@ -105,7 +165,21 @@ internal static class Program
 
         AnsiConsole.Write(toolsTable);
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Type 'exit' to quit.[/]\n");
+
+        var agentsTable = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("[blue]Agent[/]")
+            .AddColumn("[blue]Description[/]")
+            .AddColumn("[blue]Command[/]");
+
+        agentsTable.AddRow(
+            "[cyan]SpamFilter[/]",
+            "Scans inbox for spam, moves known spam to junk, flags candidates for human review",
+            "[dim]/spam[/]");
+
+        AnsiConsole.Write(agentsTable);
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[dim]Type '/spam' to run an agent, or 'exit' to quit.[/]\n");
     }
 
     private static async Task RunChatLoopAsync(IChatClient chatClient, ChatOptions tools, List<ChatMessage> history)
@@ -125,6 +199,13 @@ internal static class Program
             if (userInput.Equals("exit", StringComparison.OrdinalIgnoreCase))
             {
                 break;
+            }
+
+            if (userInput.Equals("/spam", StringComparison.OrdinalIgnoreCase))
+            {
+                await RunSpamFilterAgentAsync().ConfigureAwait(false);
+                AnsiConsole.MarkupLine("\n[dim]Returned to chat mode.[/]\n");
+                continue;
             }
 
             history.Add(new ChatMessage(ChatRole.User, userInput));

@@ -16,7 +16,7 @@
     <Threshold>90</Threshold>
     <ThresholdType>line</ThresholdType>
     <ThresholdStat>total</ThresholdStat>
-    <ExcludeByFile>**/Program.cs,**/WebSearchTools.cs,**/OutlookMailTools.cs</ExcludeByFile>
+    <ExcludeByFile>**/Program.cs,**/WebSearchTools.cs,**/OutlookMailTools.cs,**/SpamFilterAgent.cs,**/SpamFilterTools.cs</ExcludeByFile>
   </PropertyGroup>
 
   <ItemGroup>

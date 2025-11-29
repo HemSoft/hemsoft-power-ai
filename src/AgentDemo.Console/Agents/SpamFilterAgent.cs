@@ -1,0 +1,645 @@
+// <copyright file="SpamFilterAgent.cs" company="HemSoft">
+// Copyright © 2025 HemSoft
+// </copyright>
+
+namespace AgentDemo.Console.Agents;
+
+using System.ClientModel;
+using System.Globalization;
+using System.Text.Json;
+
+using AgentDemo.Console.Configuration;
+using AgentDemo.Console.Models;
+using AgentDemo.Console.Services;
+using AgentDemo.Console.Tools;
+
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+
+using OpenAI;
+
+using Spectre.Console;
+
+/// <summary>
+/// Agent that orchestrates the spam filtering workflow.
+/// </summary>
+internal sealed class SpamFilterAgent : IDisposable
+{
+    private const string ModelId = "x-ai/grok-4.1-fast:free";
+    private const string OpenRouterBaseUrlEnvVar = "OPENROUTER_BASE_URL";
+    private const string ApiKeyEnvVar = "OPENROUTER_API_KEY";
+
+    private const string AgentInstructions = """
+        You are a spam filtering assistant. Your job is to analyze emails and determine if they are spam.
+
+        ## Your workflow for each batch of emails:
+
+        1. First, get the list of known spam domains using GetKnownSpamDomains.
+        2. Fetch a batch of emails from the inbox using GetInboxEmailsAsync.
+        3. For each email:
+           a. Check if the sender's domain is in the known spam list using IsKnownSpamDomain.
+           b. If it IS a known spam domain:
+              - FIRST call MoveToJunkAsync(messageId) to move the email
+              - THEN call ReportEmailEvaluation with verdict="Junked"
+           c. If it is NOT a known spam domain:
+              - Read the full email content using ReadEmailAsync
+              - Analyze it for spam indicators (suspicious links, urgent money requests, lottery/prize notifications,
+                pharmaceutical ads, adult content, phishing attempts, unknown senders with generic greetings)
+              - If spam (confidence > 0.7), use RecordSpamCandidate and ReportEmailEvaluation (verdict="Candidate")
+              - If legitimate, use ReportEmailEvaluation (verdict="Legitimate")
+
+        4. IMPORTANT: Call ReportEmailEvaluation for EVERY email with:
+           - messageId: the email's id from GetInboxEmailsAsync (REQUIRED - copy it exactly)
+           - senderEmail: the sender's email address
+           - subject: the email subject
+           - verdict: one of "Legitimate", "Junked", or "Candidate"
+           - reason: brief explanation (e.g., "Newsletter subscription", "Known spam domain", "Suspicious links")
+
+        5. After processing the batch, report stats using EXACTLY this format on its own line:
+           BATCH_STATS: processed=N, junked=M, candidates=K, legitimate=L
+
+        ## Important rules:
+        - Always call ReportEmailEvaluation for EVERY email so the user can see progress.
+        - Be conservative - only flag emails as spam if you're reasonably confident.
+        - Do not move emails to junk unless they're from known spam domains.
+        - ALWAYS include the BATCH_STATS line at the end.
+        """;
+
+    private readonly SpamFilterSettings settings;
+    private readonly SpamFilterTools tools;
+    private readonly List<EmailEvaluation> currentBatchEvaluations = [];
+    private int consecutiveEmptyBatches;
+    private bool disposed;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SpamFilterAgent"/> class.
+    /// </summary>
+    /// <param name="settings">The spam filter settings.</param>
+    public SpamFilterAgent(SpamFilterSettings settings)
+    {
+        this.settings = settings;
+        var storageService = new SpamStorageService(settings);
+        this.tools = new SpamFilterTools(storageService);
+    }
+
+    private enum BatchAction
+    {
+        Continue,
+        Stop,
+    }
+
+    /// <summary>
+    /// Runs the spam filtering workflow.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task representing the async operation.</returns>
+    public async Task RunAsync(CancellationToken cancellationToken = default)
+    {
+        var (chatClient, validationError) = CreateChatClient();
+        if (chatClient is null)
+        {
+            AnsiConsole.Write(new Panel(validationError!)
+                .Header("[red]Configuration Error[/]")
+                .Border(BoxBorder.Rounded));
+            return;
+        }
+
+        var agent = this.CreateAgent(chatClient);
+        DisplayHeader(this.settings);
+
+        var stats = new RunStats();
+        this.consecutiveEmptyBatches = 0;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            stats.Iteration++;
+            AnsiConsole.MarkupLine($"\n[blue]═══ Batch {stats.Iteration} ═══[/]");
+
+            var batchResult = await this.ProcessInboxBatchAsync(agent, this.settings.BatchSize, cancellationToken).ConfigureAwait(false);
+            var action = await this.HandleBatchResultAsync(batchResult, stats, cancellationToken).ConfigureAwait(false);
+
+            if (action == BatchAction.Stop)
+            {
+                break;
+            }
+        }
+
+        DisplayFinalSummary(stats);
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (this.disposed)
+        {
+            return;
+        }
+
+        this.tools.Dispose();
+        this.disposed = true;
+    }
+
+    private static void DisplayFinalSummary(RunStats stats)
+    {
+        AnsiConsole.MarkupLine($"\n[green]═══ Final Summary ═══[/]");
+        AnsiConsole.MarkupLine($"[green]Total emails processed: {stats.TotalProcessed}[/]");
+        AnsiConsole.MarkupLine($"[green]Total moved to junk: {stats.TotalMovedToJunk}[/]");
+        AnsiConsole.MarkupLine($"[green]Total candidates flagged: {stats.TotalCandidates}[/]");
+    }
+
+    private static void DisplayEvaluationTable(List<EmailEvaluation> evaluations)
+    {
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn(new TableColumn("[blue]#[/]").Width(3))
+            .AddColumn(new TableColumn("[blue]Sender[/]").Width(28))
+            .AddColumn(new TableColumn("[blue]Subject[/]").Width(33))
+            .AddColumn(new TableColumn("[blue]Verdict[/]").Width(12))
+            .AddColumn(new TableColumn("[blue]Reason[/]").Width(22));
+
+        var rowNum = 1;
+        foreach (var eval in evaluations)
+        {
+            var verdictColor = eval.Verdict.ToUpperInvariant() switch
+            {
+                "LEGITIMATE" => "green",
+                "JUNKED" => "red",
+                "CANDIDATE" => "yellow",
+                "KNOWN SPAM" => "red",
+                _ => "white",
+            };
+
+            var sender = Truncate(eval.Sender, 26);
+            var subject = Truncate(eval.Subject, 31);
+            var reason = Truncate(eval.Reason ?? "-", 20);
+
+            table.AddRow(
+                $"[dim]{rowNum}[/]",
+                Markup.Escape(sender),
+                Markup.Escape(subject),
+                $"[{verdictColor}]{Markup.Escape(eval.Verdict)}[/]",
+                Markup.Escape(reason));
+            rowNum++;
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.MarkupLine("[dim]Press any key to mark emails as spam (e.g., 1,3,5) or wait to continue...[/]");
+    }
+
+    private static string Truncate(string text, int maxLength) =>
+        text.Length <= maxLength ? text : text[..(maxLength - 1)] + "…";
+
+    private static string ExtractDomain(string email)
+    {
+        var atIndex = email.LastIndexOf('@');
+        return atIndex >= 0 && atIndex < email.Length - 1
+            ? email[(atIndex + 1)..].ToUpperInvariant()
+            : email.ToUpperInvariant();
+    }
+
+    private static void AddEmailRowToTable(Table table, JsonElement email)
+    {
+        var subject = email.GetProperty("subject").GetString() ?? "(no subject)";
+        var sender = email.GetProperty("senderEmail").GetString() ?? "unknown";
+        var confidence = email.GetProperty("confidenceScore").GetDouble();
+        var reason = email.GetProperty("spamReason").GetString() ?? "N/A";
+
+        table.AddRow(
+            Markup.Escape(subject.Length > 40 ? subject[..37] + "..." : subject),
+            Markup.Escape(sender),
+            confidence.ToString("P0", CultureInfo.InvariantCulture),
+            Markup.Escape(reason.Length > 30 ? reason[..27] + "..." : reason));
+    }
+
+    private static BatchResult ParseBatchResult(string responseText)
+    {
+        var result = new BatchResult();
+
+        var upperResponse = responseText.ToUpperInvariant();
+        if (upperResponse.Contains("NO EMAILS", StringComparison.Ordinal) ||
+            upperResponse.Contains("INBOX IS EMPTY", StringComparison.Ordinal) ||
+            upperResponse.Contains("INBOX EMPTY", StringComparison.Ordinal) ||
+            upperResponse.Contains("NO MORE EMAILS", StringComparison.Ordinal) ||
+            upperResponse.Contains("EMPTY ARRAY", StringComparison.Ordinal) ||
+            upperResponse.Contains("[]", StringComparison.Ordinal) ||
+            upperResponse.Contains("0 EMAILS IN", StringComparison.Ordinal))
+        {
+            result.InboxWasEmpty = true;
+            return result;
+        }
+
+        var statsMatch = System.Text.RegularExpressions.Regex.Match(
+            responseText,
+            @"BATCH_STATS:\s*processed\s*=\s*(\d+)\s*,\s*junked\s*=\s*(\d+)\s*,\s*candidates\s*=\s*(\d+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (statsMatch.Success)
+        {
+            result.EmailsProcessed = int.Parse(statsMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+            result.MovedToJunk = int.Parse(statsMatch.Groups[2].Value, CultureInfo.InvariantCulture);
+            result.CandidatesRecorded = int.Parse(statsMatch.Groups[3].Value, CultureInfo.InvariantCulture);
+            return result;
+        }
+
+        result.EmailsProcessed = ExtractCountFromPattern(
+            upperResponse, @"(\d+)\s*(?:EMAILS?\s*)?PROCESSED|PROCESSED\s*(\d+)");
+
+        result.MovedToJunk = ExtractCountFromPattern(
+            upperResponse, @"(\d+)\s*(?:EMAILS?\s*)?(?:MOVED\s*TO\s*JUNK|JUNKED)|(?:MOVED|JUNKED)\s*(\d+)");
+
+        result.CandidatesRecorded = ExtractCountFromPattern(
+            upperResponse, @"(\d+)\s*(?:SPAM\s*)?CANDIDATES?|FLAGGED\s*(\d+)");
+
+        return result;
+    }
+
+    private static int ExtractCountFromPattern(string text, string pattern)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(text, pattern);
+        if (match.Success)
+        {
+            var numStr = match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value;
+            if (int.TryParse(numStr, CultureInfo.InvariantCulture, out var num))
+            {
+                return num;
+            }
+        }
+
+        return 0;
+    }
+
+    private static void DisplayHeader(SpamFilterSettings settings)
+    {
+        AnsiConsole.Write(new FigletText("Spam Filter").Color(Color.Red));
+        AnsiConsole.MarkupLine($"[dim]Model: {ModelId}[/]");
+        AnsiConsole.MarkupLine($"[dim]Batch Size: {settings.BatchSize} | Delay: {settings.DelayBetweenBatchesSeconds}s[/]\n");
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("[blue]Phase[/]")
+            .AddColumn("[blue]Description[/]");
+
+        table.AddRow("1. Scan", "Process inbox emails in batches");
+        table.AddRow("2. Analyze", "AI checks known spam domains and analyzes content");
+        table.AddRow("3. Act", "Known spam → junk, unknown spam → candidates");
+        table.AddRow("4. Review", "Human approves domains to add to spam list");
+
+        AnsiConsole.Write(table);
+        AnsiConsole.MarkupLine("\n[dim]Press Ctrl+C to stop.[/]\n");
+    }
+
+    private static (IChatClient? Client, string? Error) CreateChatClient()
+    {
+        var baseUrlValue = Environment.GetEnvironmentVariable(OpenRouterBaseUrlEnvVar);
+        if (string.IsNullOrEmpty(baseUrlValue))
+        {
+            return (null, $"Missing {OpenRouterBaseUrlEnvVar} environment variable.\n\n" +
+                          $"Set it with:\n$env:{OpenRouterBaseUrlEnvVar} = \"https://openrouter.ai/api/v1\"");
+        }
+
+        var apiKey = Environment.GetEnvironmentVariable(ApiKeyEnvVar);
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            return (null, $"Missing {ApiKeyEnvVar} environment variable.\n\n" +
+                          $"Set it with:\n$env:{ApiKeyEnvVar} = \"your-api-key\"");
+        }
+
+        var openAiClient = new OpenAIClient(
+            new ApiKeyCredential(apiKey),
+            new OpenAIClientOptions { Endpoint = new Uri(baseUrlValue) });
+
+        var chatClient = openAiClient
+            .GetChatClient(ModelId)
+            .AsIChatClient()
+            .AsBuilder()
+            .UseFunctionInvocation()
+            .Build();
+
+        return (chatClient, null);
+    }
+
+    private async Task<BatchResult> ProcessInboxBatchAsync(AIAgent agent, int batchSize, CancellationToken cancellationToken)
+    {
+        var result = new BatchResult();
+        this.currentBatchEvaluations.Clear();
+
+        try
+        {
+            var prompt = $"Process a batch of {batchSize} emails from the inbox. " +
+                         "Follow your workflow to check each email against known spam domains, " +
+                         "move known spam to junk, and analyze unknown senders for spam indicators. " +
+                         "Call ReportEmailEvaluation for EVERY email you process. " +
+                         "Report how many emails you processed, moved to junk, and flagged as candidates.";
+
+            string? responseText = null;
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("blue"))
+                .StartAsync("Processing inbox batch...", async ctx =>
+                {
+                    // Set up callback that updates both the list and the status display
+                    this.tools.SetEvaluationCallback(eval =>
+                    {
+                        this.currentBatchEvaluations.Add(eval);
+                        var count = this.currentBatchEvaluations.Count;
+                        var sender = Truncate(eval.Sender, 25);
+                        ctx.Status($"[blue]Processing email {count}/{batchSize}:[/] [dim]{Markup.Escape(sender)}[/]");
+                    });
+
+                    var response = await agent.RunAsync(prompt, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    responseText = response.Text;
+                })
+                .ConfigureAwait(false);
+
+            // Display the evaluation table if we have any evaluations
+            if (this.currentBatchEvaluations.Count > 0)
+            {
+                DisplayEvaluationTable(this.currentBatchEvaluations);
+            }
+
+            if (!string.IsNullOrEmpty(responseText))
+            {
+                result = ParseBatchResult(responseText);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AnsiConsole.Write(new Panel($"[red]{Markup.Escape(ex.Message)}[/]")
+                .Header("[red]Error[/]")
+                .Border(BoxBorder.Rounded));
+        }
+        finally
+        {
+            this.tools.SetEvaluationCallback(null);
+        }
+
+        return result;
+    }
+
+    private ChatClientAgent CreateAgent(IChatClient chatClient) =>
+        new(
+            chatClient,
+            instructions: AgentInstructions,
+            name: "SpamFilterAgent",
+            description: "An agent that analyzes emails and filters spam",
+            tools:
+            [
+                AIFunctionFactory.Create(this.tools.GetKnownSpamDomains),
+                AIFunctionFactory.Create(this.tools.IsKnownSpamDomain),
+                AIFunctionFactory.Create(this.tools.GetInboxEmailsAsync),
+                AIFunctionFactory.Create(this.tools.ReadEmailAsync),
+                AIFunctionFactory.Create(this.tools.MoveToJunkAsync),
+                AIFunctionFactory.Create(this.tools.RecordSpamCandidate),
+                AIFunctionFactory.Create(this.tools.ReportEmailEvaluation),
+                AIFunctionFactory.Create(this.tools.AddToSpamDomainList),
+                AIFunctionFactory.Create(this.tools.GetPendingSpamCandidatesByDomain),
+                AIFunctionFactory.Create(this.tools.ProcessApprovedSpamDomainAsync),
+                AIFunctionFactory.Create(this.tools.ClearProcessedCandidates),
+            ]);
+
+    private async Task<BatchAction> HandleBatchResultAsync(BatchResult batchResult, RunStats stats, CancellationToken cancellationToken) =>
+        (batchResult.EmailsProcessed, batchResult.InboxWasEmpty) switch
+        {
+            (0, true) => await this.HandleEmptyInboxAsync(cancellationToken).ConfigureAwait(false),
+            (0, false) => await this.HandleParsingFailureAsync(cancellationToken).ConfigureAwait(false),
+            _ => await this.HandleSuccessfulBatchAsync(batchResult, stats, cancellationToken).ConfigureAwait(false),
+        };
+
+    private async Task<BatchAction> HandleEmptyInboxAsync(CancellationToken cancellationToken)
+    {
+        AnsiConsole.MarkupLine("[green]No more emails to process in inbox.[/]");
+
+        var hasMoreCandidates = await this.ProcessHumanReviewAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!hasMoreCandidates)
+        {
+            AnsiConsole.MarkupLine("[green]✓ All done! No spam candidates pending review.[/]");
+            return BatchAction.Stop;
+        }
+
+        this.consecutiveEmptyBatches = 0;
+        return BatchAction.Continue;
+    }
+
+    private async Task<BatchAction> HandleParsingFailureAsync(CancellationToken cancellationToken)
+    {
+        this.consecutiveEmptyBatches++;
+        AnsiConsole.MarkupLine($"[yellow]Could not parse batch results (attempt {this.consecutiveEmptyBatches}/3). Continuing...[/]");
+
+        if (this.consecutiveEmptyBatches >= 3)
+        {
+            AnsiConsole.MarkupLine("[yellow]Multiple parsing failures. Triggering human review...[/]");
+
+            var hasMoreCandidates = await this.ProcessHumanReviewAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!hasMoreCandidates)
+            {
+                AnsiConsole.MarkupLine("[green]✓ All done! No spam candidates pending review.[/]");
+                return BatchAction.Stop;
+            }
+
+            this.consecutiveEmptyBatches = 0;
+        }
+
+        await this.WaitBeforeNextBatchAsync(cancellationToken).ConfigureAwait(false);
+        return BatchAction.Continue;
+    }
+
+    private async Task<BatchAction> HandleSuccessfulBatchAsync(BatchResult batchResult, RunStats stats, CancellationToken cancellationToken)
+    {
+        this.consecutiveEmptyBatches = 0;
+        stats.TotalProcessed += batchResult.EmailsProcessed;
+        stats.TotalMovedToJunk += batchResult.MovedToJunk;
+        stats.TotalCandidates += batchResult.CandidatesRecorded;
+
+        AnsiConsole.MarkupLine($"[dim]Running totals: {stats.TotalProcessed} processed, {stats.TotalMovedToJunk} junked, {stats.TotalCandidates} candidates[/]");
+
+        await this.WaitBeforeNextBatchAsync(cancellationToken).ConfigureAwait(false);
+        return BatchAction.Continue;
+    }
+
+    private async Task WaitBeforeNextBatchAsync(CancellationToken cancellationToken)
+    {
+        var delayMs = this.settings.DelayBetweenBatchesSeconds * 1000;
+        var elapsed = 0;
+        const int checkIntervalMs = 100;
+
+        while (elapsed < delayMs && !cancellationToken.IsCancellationRequested)
+        {
+            if (System.Console.KeyAvailable)
+            {
+                // User pressed a key - prompt for spam selections
+                System.Console.ReadKey(intercept: true); // Consume the key that triggered this
+                await this.ProcessUserSpamSelectionsAsync().ConfigureAwait(false);
+                break;
+            }
+
+            await Task.Delay(checkIntervalMs, cancellationToken).ConfigureAwait(false);
+            elapsed += checkIntervalMs;
+        }
+    }
+
+    private async Task ProcessUserSpamSelectionsAsync()
+    {
+        if (this.currentBatchEvaluations.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No emails in current batch to mark.[/]");
+            return;
+        }
+
+        var input = await AnsiConsole.AskAsync<string>("[yellow]Enter email numbers to mark as spam (e.g., 1,3,5) or press Enter to skip:[/]").ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return;
+        }
+
+        var selections = input
+            .Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => int.TryParse(s.Trim(), out var n) ? n : 0)
+            .Where(n => n > 0 && n <= this.currentBatchEvaluations.Count)
+            .Distinct()
+            .ToList();
+
+        if (selections.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No valid selections.[/]");
+            return;
+        }
+
+        var processed = 0;
+        foreach (var num in selections)
+        {
+            var result = await this.ProcessSingleSpamSelectionAsync(num).ConfigureAwait(false);
+            if (result)
+            {
+                processed++;
+            }
+        }
+
+        AnsiConsole.MarkupLine($"[green]Processed {processed} email(s).[/]");
+    }
+
+    private async Task<bool> ProcessSingleSpamSelectionAsync(int num)
+    {
+        var eval = this.currentBatchEvaluations[num - 1];
+        var domain = ExtractDomain(eval.Sender);
+
+        // Check if already junked
+        if (eval.Verdict.Equals("Junked", StringComparison.OrdinalIgnoreCase))
+        {
+            AnsiConsole.MarkupLine($"[yellow]#{num}[/] [dim]{domain}[/] - already moved to junk");
+            this.tools.AddToSpamDomainList(domain, "Manually marked by user");
+            return true;
+        }
+
+        // Check if message ID is valid
+        if (string.IsNullOrEmpty(eval.MessageId))
+        {
+            AnsiConsole.MarkupLine($"[red]#{num}[/] [dim]{domain}[/] - no message ID captured (LLM didn't provide it)");
+            this.tools.AddToSpamDomainList(domain, "Manually marked by user");
+            return false;
+        }
+
+        // Add domain to spam list and move email to junk
+        this.tools.AddToSpamDomainList(domain, "Manually marked by user");
+        var result = await this.tools.MoveToJunkAsync(eval.MessageId).ConfigureAwait(false);
+
+        if (result.StartsWith("Successfully", StringComparison.Ordinal))
+        {
+            AnsiConsole.MarkupLine($"[green]#{num}[/] [dim]{domain}[/] → added to spam list, email moved to junk");
+            return true;
+        }
+
+        // Still add domain even if move failed (email might already be gone)
+        AnsiConsole.MarkupLine($"[yellow]#{num}[/] [dim]{domain}[/] → added to spam list (move failed: {Truncate(result, 50)})");
+        return true;
+    }
+
+    private async Task<bool> ProcessHumanReviewAsync(CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+
+        var candidatesJson = this.tools.GetPendingSpamCandidatesByDomain();
+        var candidates = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(candidatesJson);
+
+        if (candidates is null || candidates.Count == 0)
+        {
+            return false;
+        }
+
+        AnsiConsole.MarkupLine($"\n[yellow]═══ Human Review Required ═══[/]");
+        AnsiConsole.MarkupLine($"[yellow]Found {candidates.Count} domains with spam candidates.[/]\n");
+
+        foreach (var (domain, emailsElement) in candidates)
+        {
+            await this.ProcessDomainCandidatesAsync(domain, emailsElement).ConfigureAwait(false);
+        }
+
+        this.tools.ClearProcessedCandidates();
+
+        return false;
+    }
+
+    private async Task ProcessDomainCandidatesAsync(string domain, JsonElement emailsElement)
+    {
+        var emails = emailsElement.EnumerateArray().ToList();
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .AddColumn("[blue]Subject[/]")
+            .AddColumn("[blue]Sender[/]")
+            .AddColumn("[blue]Confidence[/]")
+            .AddColumn("[blue]Reason[/]");
+
+        foreach (var email in emails)
+        {
+            AddEmailRowToTable(table, email);
+        }
+
+        AnsiConsole.Write(new Panel(table)
+            .Header($"[yellow]Domain: {domain} ({emails.Count} emails)[/]")
+            .Border(BoxBorder.Rounded));
+
+        var approve = await AnsiConsole.ConfirmAsync($"Add [yellow]{domain}[/] to spam list and move {emails.Count} email(s) to junk?").ConfigureAwait(false);
+
+        if (approve)
+        {
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync($"Processing {domain}...", async ctx =>
+                {
+                    var result = await this.tools.ProcessApprovedSpamDomainAsync(domain).ConfigureAwait(false);
+                    AnsiConsole.MarkupLine($"[green]{Markup.Escape(result)}[/]");
+                })
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[dim]Skipped {domain} - emails remain in inbox.[/]");
+        }
+    }
+
+    private sealed class BatchResult
+    {
+        public int EmailsProcessed { get; set; }
+
+        public int MovedToJunk { get; set; }
+
+        public int CandidatesRecorded { get; set; }
+
+        public bool InboxWasEmpty { get; set; }
+    }
+
+    private sealed class RunStats
+    {
+        public int Iteration { get; set; }
+
+        public int TotalProcessed { get; set; }
+
+        public int TotalMovedToJunk { get; set; }
+
+        public int TotalCandidates { get; set; }
+    }
+}
