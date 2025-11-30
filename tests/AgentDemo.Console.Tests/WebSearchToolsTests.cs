@@ -18,7 +18,7 @@ public sealed class WebSearchToolsTests
     [Fact]
     public async Task SearchAsyncEmptyQueryReturnsError()
     {
-        var result = await WebSearchTools.SearchAsync(string.Empty);
+        var result = await WebSearchTools.WebSearchAsync(string.Empty);
 
         Assert.Contains("Error: Search query cannot be empty", result, StringComparison.Ordinal);
     }
@@ -30,7 +30,7 @@ public sealed class WebSearchToolsTests
     [Fact]
     public async Task SearchAsyncWhitespaceQueryReturnsError()
     {
-        var result = await WebSearchTools.SearchAsync("   ");
+        var result = await WebSearchTools.WebSearchAsync("   ");
 
         Assert.Contains("Error: Search query cannot be empty", result, StringComparison.Ordinal);
     }
@@ -52,7 +52,7 @@ public sealed class WebSearchToolsTests
             Environment.SetEnvironmentVariable("TAVILY_API_URL", null);
             Environment.SetEnvironmentVariable("TAVILY_API_KEY", "test-key");
 
-            var result = await WebSearchTools.SearchAsync("test query");
+            var result = await WebSearchTools.WebSearchAsync("test query");
 
             Assert.Contains("Error: Missing TAVILY_API_URL", result, StringComparison.Ordinal);
         }
@@ -81,7 +81,7 @@ public sealed class WebSearchToolsTests
             Environment.SetEnvironmentVariable("TAVILY_API_URL", "https://api.tavily.com/search");
             Environment.SetEnvironmentVariable("TAVILY_API_KEY", null);
 
-            var result = await WebSearchTools.SearchAsync("test query");
+            var result = await WebSearchTools.WebSearchAsync("test query");
 
             Assert.Contains("Error: Missing TAVILY_API_KEY", result, StringComparison.Ordinal);
             Assert.Contains("https://tavily.com", result, StringComparison.Ordinal);
@@ -111,7 +111,7 @@ public sealed class WebSearchToolsTests
             Environment.SetEnvironmentVariable("TAVILY_API_URL", "https://api.tavily.com/search");
             Environment.SetEnvironmentVariable("TAVILY_API_KEY", "invalid-key");
 
-            var result = await WebSearchTools.SearchAsync("test query");
+            var result = await WebSearchTools.WebSearchAsync("test query");
 
             // Should return an error (either auth error or parse error)
             Assert.Contains("Error:", result, StringComparison.Ordinal);
@@ -142,8 +142,8 @@ public sealed class WebSearchToolsTests
             Environment.SetEnvironmentVariable("TAVILY_API_KEY", null);
 
             // These should not throw even with out-of-range values
-            var result1 = await WebSearchTools.SearchAsync("test", maxResults: -5);
-            var result2 = await WebSearchTools.SearchAsync("test", maxResults: 100);
+            var result1 = await WebSearchTools.WebSearchAsync("test", maxResults: -5);
+            var result2 = await WebSearchTools.WebSearchAsync("test", maxResults: 100);
 
             // Both should fail at API URL check, not parameter validation
             Assert.Contains("Error: Missing TAVILY_API_URL", result1, StringComparison.Ordinal);
@@ -174,7 +174,7 @@ public sealed class WebSearchToolsTests
             Environment.SetEnvironmentVariable("TAVILY_API_URL", "https://invalid-domain-that-does-not-exist.test/search");
             Environment.SetEnvironmentVariable("TAVILY_API_KEY", "test-key");
 
-            var result = await WebSearchTools.SearchAsync("test query");
+            var result = await WebSearchTools.WebSearchAsync("test query");
 
             // Should return a network error
             Assert.Contains("Error:", result, StringComparison.Ordinal);
@@ -205,7 +205,7 @@ public sealed class WebSearchToolsTests
             Environment.SetEnvironmentVariable("TAVILY_API_KEY", null);
 
             // Valid maxResults should not cause parameter errors
-            var result = await WebSearchTools.SearchAsync("test", maxResults: 3);
+            var result = await WebSearchTools.WebSearchAsync("test", maxResults: 3);
 
             // Should fail at URL check, not parameter validation
             Assert.Contains("Error: Missing TAVILY_API_URL", result, StringComparison.Ordinal);

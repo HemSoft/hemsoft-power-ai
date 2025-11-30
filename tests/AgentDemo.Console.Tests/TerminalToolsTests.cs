@@ -17,7 +17,7 @@ public sealed class TerminalToolsTests
     [Fact]
     public void ExecuteEmptyCommandReturnsError()
     {
-        var result = TerminalTools.Execute(string.Empty);
+        var result = TerminalTools.Terminal(string.Empty);
 
         Assert.Contains("Error: Command cannot be empty", result, StringComparison.Ordinal);
     }
@@ -28,7 +28,7 @@ public sealed class TerminalToolsTests
     [Fact]
     public void ExecuteWhitespaceCommandReturnsError()
     {
-        var result = TerminalTools.Execute("   ");
+        var result = TerminalTools.Terminal("   ");
 
         Assert.Contains("Error: Command cannot be empty", result, StringComparison.Ordinal);
     }
@@ -39,7 +39,7 @@ public sealed class TerminalToolsTests
     [Fact]
     public void ExecuteEchoCommandReturnsOutput()
     {
-        var result = TerminalTools.Execute("echo 'hello world'");
+        var result = TerminalTools.Terminal("echo 'hello world'");
 
         Assert.Contains("hello world", result, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Exit: 0", result, StringComparison.Ordinal);
@@ -51,7 +51,7 @@ public sealed class TerminalToolsTests
     [Fact]
     public void ExecuteValidCommandIncludesExitCode()
     {
-        var result = TerminalTools.Execute("echo test");
+        var result = TerminalTools.Terminal("echo test");
 
         Assert.Contains("Exit:", result, StringComparison.Ordinal);
     }
@@ -63,7 +63,7 @@ public sealed class TerminalToolsTests
     public void ExecuteWithWorkingDirectoryExecutesInDirectory()
     {
         var tempDir = Path.GetTempPath();
-        var result = TerminalTools.Execute("Get-Location", tempDir);
+        var result = TerminalTools.Terminal("Get-Location", tempDir);
 
         Assert.Contains("Exit: 0", result, StringComparison.Ordinal);
     }
@@ -74,7 +74,7 @@ public sealed class TerminalToolsTests
     [Fact]
     public void ExecuteInvalidWorkingDirectoryUsesCurrentDirectory()
     {
-        var result = TerminalTools.Execute("echo test", "C:\\NonExistentPath\\12345");
+        var result = TerminalTools.Terminal("echo test", "C:\\NonExistentPath\\12345");
 
         Assert.Contains("Exit: 0", result, StringComparison.Ordinal);
     }
@@ -86,7 +86,7 @@ public sealed class TerminalToolsTests
     public void ExecuteWithTimeoutRespectsTimeout()
     {
         // Should complete quickly
-        var result = TerminalTools.Execute("echo fast", timeoutSeconds: 5);
+        var result = TerminalTools.Terminal("echo fast", timeoutSeconds: 5);
 
         Assert.Contains("Exit: 0", result, StringComparison.Ordinal);
     }
@@ -156,7 +156,7 @@ public sealed class TerminalToolsTests
     [Fact]
     public void ExecuteCommandWithStderrReturnsStderr()
     {
-        var result = TerminalTools.Execute("Write-Error 'test error' 2>&1");
+        var result = TerminalTools.Terminal("Write-Error 'test error' 2>&1");
 
         Assert.Contains("Exit:", result, StringComparison.Ordinal);
     }
@@ -167,7 +167,7 @@ public sealed class TerminalToolsTests
     [Fact]
     public void ExecuteCommandWithSpecialCharactersWorks()
     {
-        var result = TerminalTools.Execute("echo 'hello \"world\"'");
+        var result = TerminalTools.Terminal("echo 'hello \"world\"'");
 
         Assert.Contains("Exit:", result, StringComparison.Ordinal);
     }
@@ -178,7 +178,7 @@ public sealed class TerminalToolsTests
     [Fact]
     public void ExecuteWithZeroTimeoutUsesMinimum()
     {
-        var result = TerminalTools.Execute("echo test", timeoutSeconds: 0);
+        var result = TerminalTools.Terminal("echo test", timeoutSeconds: 0);
 
         Assert.Contains("Exit: 0", result, StringComparison.Ordinal);
     }
@@ -189,7 +189,7 @@ public sealed class TerminalToolsTests
     [Fact]
     public void ExecuteWithLargeTimeoutUsesMaximum()
     {
-        var result = TerminalTools.Execute("echo test", timeoutSeconds: 1000);
+        var result = TerminalTools.Terminal("echo test", timeoutSeconds: 1000);
 
         Assert.Contains("Exit: 0", result, StringComparison.Ordinal);
     }

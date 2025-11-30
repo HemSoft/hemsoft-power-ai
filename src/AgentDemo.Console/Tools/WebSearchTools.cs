@@ -28,7 +28,7 @@ internal static class WebSearchTools
     /// <param name="maxResults">Maximum number of results to return (1-10, default: 5).</param>
     /// <returns>Formatted search results or error message.</returns>
     [Description("Search the web for current information. Returns summarized results with titles, URLs, and content snippets.")]
-    public static async Task<string> SearchAsync(string query, int maxResults = DefaultMaxResults)
+    public static async Task<string> WebSearchAsync(string query, int maxResults = DefaultMaxResults)
     {
         System.Console.WriteLine($"[Tool] WebSearch: {query}");
 

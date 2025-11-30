@@ -25,9 +25,9 @@ internal static class TerminalTools
     /// <param name="timeoutSeconds">Timeout in seconds (default: 30, max: 300).</param>
     /// <returns>Command output including stdout, stderr, and exit code.</returns>
     [Description("Execute terminal commands with full shell access. PowerShell on Windows, bash on Unix. Returns stdout, stderr, and exit code.")]
-    public static string Execute(string command, string? workingDirectory = null, int timeoutSeconds = 30)
+    public static string Terminal(string command, string? workingDirectory = null, int timeoutSeconds = 30)
     {
-        System.Console.WriteLine($"[Tool] Execute: {command}");
+        System.Console.WriteLine($"[Tool] Terminal: {command}");
 
         if (string.IsNullOrWhiteSpace(command))
         {
@@ -78,7 +78,7 @@ internal static class TerminalTools
         foreach (var cmd in commandList)
         {
             results.Append(">>> ").AppendLine(cmd);
-            var result = Execute(cmd, workingDirectory);
+            var result = Terminal(cmd, workingDirectory);
             results.AppendLine(result);
 
             var failed = result.Contains("Exit: ", StringComparison.Ordinal) && !result.Contains("Exit: 0", StringComparison.Ordinal);

@@ -333,24 +333,19 @@ internal sealed class SpamFilterAgent : IDisposable
 
             string? responseText = null;
 
-            await AnsiConsole.Status()
-                .Spinner(Spinner.Known.Dots)
-                .SpinnerStyle(Style.Parse("blue"))
-                .StartAsync("Processing inbox batch...", async ctx =>
-                {
-                    // Set up callback that updates both the list and the status display
-                    this.tools.SetEvaluationCallback(eval =>
-                    {
-                        this.currentBatchEvaluations.Add(eval);
-                        var count = this.currentBatchEvaluations.Count;
-                        var sender = Truncate(eval.Sender, 25);
-                        ctx.Status($"[blue]Processing email {count}/{batchSize}:[/] [dim]{Markup.Escape(sender)}[/]");
-                    });
+            // Set up callback before starting
+            this.tools.SetEvaluationCallback(this.currentBatchEvaluations.Add);
 
-                    var response = await agent.RunAsync(prompt, cancellationToken: cancellationToken).ConfigureAwait(false);
-                    responseText = response.Text;
-                })
-                .ConfigureAwait(false);
+            try
+            {
+                AnsiConsole.MarkupLine("[blue]Processing inbox batch...[/]");
+                var response = await agent.RunAsync(prompt, cancellationToken: cancellationToken).ConfigureAwait(false);
+                responseText = response.Text;
+            }
+            finally
+            {
+                this.tools.SetEvaluationCallback(null);
+            }
 
             // Display the evaluation table if we have any evaluations
             if (this.currentBatchEvaluations.Count > 0)
@@ -363,15 +358,11 @@ internal sealed class SpamFilterAgent : IDisposable
                 result = ParseBatchResult(responseText);
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (HttpRequestException ex)
         {
             AnsiConsole.Write(new Panel($"[red]{Markup.Escape(ex.Message)}[/]")
-                .Header("[red]Error[/]")
+                .Header("[red]Network Error[/]")
                 .Border(BoxBorder.Rounded));
-        }
-        finally
-        {
-            this.tools.SetEvaluationCallback(null);
         }
 
         return result;

@@ -5,9 +5,11 @@
 namespace AgentDemo.Console;
 
 using System.ClientModel;
+using System.Diagnostics;
 
 using AgentDemo.Console.Agents;
 using AgentDemo.Console.Configuration;
+using AgentDemo.Console.Telemetry;
 using AgentDemo.Console.Tools;
 
 using Microsoft.Extensions.AI;
@@ -22,29 +24,48 @@ using Spectre.Console;
 /// </summary>
 internal static class Program
 {
+    private const string SourceName = "AgentDemo.Console";
     private const string ModelId = "x-ai/grok-4.1-fast:free";
     private const string OpenRouterBaseUrlEnvVar = "OPENROUTER_BASE_URL";
+
+    private enum ChatCommand
+    {
+        Empty,
+        Exit,
+        Clear,
+        Usage,
+        Spam,
+        Message,
+    }
 
     /// <summary>
     /// Application entry point.
     /// </summary>
     /// <param name="args">Command line arguments. Use 'spam' to run spam filter agent.</param>
     /// <returns>Exit code (0 for success, 1 for configuration error).</returns>
-    public static Task<int> Main(string[] args) =>
-        args.Length > 0 && args[0].Equals("spam", StringComparison.OrdinalIgnoreCase)
-            ? RunSpamFilterAgentAsync()
-            : RunInteractiveChatAsync();
-
-    private static async Task<int> RunSpamFilterAgentAsync()
+    public static async Task<int> Main(string[] args)
     {
+        // Initialize OpenTelemetry (traces, metrics, logs)
+        // Exports to Aspire Dashboard when OTEL_EXPORTER_OTLP_ENDPOINT is set
+        using var telemetry = new TelemetrySetup(SourceName);
+
         // Load configuration
         var configuration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            .AddJsonFile("appsettings.json", optional: true)
             .Build();
 
         var settings = new SpamFilterSettings();
         configuration.GetSection(SpamFilterSettings.SectionName).Bind(settings);
+
+        return args.Length > 0 && args[0].Equals("spam", StringComparison.OrdinalIgnoreCase)
+            ? await RunSpamFilterAgentAsync(settings, telemetry).ConfigureAwait(false)
+            : await RunInteractiveChatAsync(settings, telemetry).ConfigureAwait(false);
+    }
+
+    private static async Task<int> RunSpamFilterAgentAsync(SpamFilterSettings settings, TelemetrySetup telemetry)
+    {
+        using var activity = telemetry.ActivitySource.StartActivity("RunSpamFilterAgent");
 
         using var agent = new SpamFilterAgent(settings);
 
@@ -69,11 +90,13 @@ internal static class Program
         try
         {
             await agent.RunAsync(cts.Token).ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Ok);
             return 0;
         }
         catch (OperationCanceledException)
         {
             AnsiConsole.MarkupLine("[yellow]Operation cancelled by user.[/]");
+            activity?.SetStatus(ActivityStatusCode.Ok, "Cancelled by user");
             return 0;
         }
         finally
@@ -82,8 +105,10 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunInteractiveChatAsync()
+    private static async Task<int> RunInteractiveChatAsync(SpamFilterSettings settings, TelemetrySetup telemetry)
     {
+        using var activity = telemetry.ActivitySource.StartActivity("RunInteractiveChat");
+
         var openRouterBaseUrlValue = Environment.GetEnvironmentVariable(OpenRouterBaseUrlEnvVar);
         if (string.IsNullOrEmpty(openRouterBaseUrlValue))
         {
@@ -93,6 +118,7 @@ internal static class Program
                 $"[dim]$env:{OpenRouterBaseUrlEnvVar} = \"https://openrouter.ai/api/v1\"[/]")
                 .Header("[yellow]Configuration Error[/]")
                 .Border(BoxBorder.Rounded));
+            activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_BASE_URL");
             return 1;
         }
 
@@ -109,6 +135,7 @@ internal static class Program
                 $"[dim]$env:{apiKeyEnvVar} = \"your-api-key\"[/]")
                 .Header("[yellow]Configuration Error[/]")
                 .Border(BoxBorder.Rounded));
+            activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_API_KEY");
             return 1;
         }
 
@@ -130,8 +157,8 @@ internal static class Program
         {
             Tools =
             [
-                AIFunctionFactory.Create(TerminalTools.Execute),
-                AIFunctionFactory.Create(WebSearchTools.SearchAsync),
+                AIFunctionFactory.Create(TerminalTools.Terminal),
+                AIFunctionFactory.Create(WebSearchTools.WebSearchAsync),
                 AIFunctionFactory.Create(OutlookMailTools.MailAsync),
             ],
         };
@@ -142,9 +169,10 @@ internal static class Program
         List<ChatMessage> history = [];
 
         // Main chat loop
-        await RunChatLoopAsync(chatClient, tools, history).ConfigureAwait(false);
+        await RunChatLoopAsync(chatClient, tools, history, settings, telemetry).ConfigureAwait(false);
 
         AnsiConsole.MarkupLine("[dim]Goodbye![/]");
+        activity?.SetStatus(ActivityStatusCode.Ok);
         return 0;
     }
 
@@ -179,11 +207,25 @@ internal static class Program
 
         AnsiConsole.Write(agentsTable);
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Type '/spam' to run an agent, or 'exit' to quit.[/]\n");
+        AnsiConsole.MarkupLine("[dim]Commands: /spam (run agent), /clear (reset history), /usage (show tokens), exit[/]\n");
     }
 
-    private static async Task RunChatLoopAsync(IChatClient chatClient, ChatOptions tools, List<ChatMessage> history)
+    private static ChatCommand ParseCommand(string? input) =>
+        string.IsNullOrWhiteSpace(input)
+            ? ChatCommand.Empty
+            : input.Trim().ToUpperInvariant() switch
+            {
+                "EXIT" => ChatCommand.Exit,
+                "/CLEAR" => ChatCommand.Clear,
+                "/USAGE" => ChatCommand.Usage,
+                "/SPAM" => ChatCommand.Spam,
+                _ => ChatCommand.Message,
+            };
+
+    private static async Task RunChatLoopAsync(IChatClient chatClient, ChatOptions tools, List<ChatMessage> history, SpamFilterSettings settings, TelemetrySetup telemetry)
     {
+        var sessionTokens = new TokenUsageTracker();
+
         while (true)
         {
             var userInput = await new TextPrompt<string>("[yellow]You:[/]")
@@ -191,31 +233,55 @@ internal static class Program
                 .ShowAsync(AnsiConsole.Console, CancellationToken.None)
                 .ConfigureAwait(false);
 
-            if (string.IsNullOrWhiteSpace(userInput))
+            var command = ParseCommand(userInput);
+            if (await HandleCommandAsync(command, history, sessionTokens, settings, telemetry).ConfigureAwait(false))
             {
                 continue;
             }
 
-            if (userInput.Equals("exit", StringComparison.OrdinalIgnoreCase))
+            if (command == ChatCommand.Exit)
             {
                 break;
             }
 
-            if (userInput.Equals("/spam", StringComparison.OrdinalIgnoreCase))
-            {
-                await RunSpamFilterAgentAsync().ConfigureAwait(false);
-                AnsiConsole.MarkupLine("\n[dim]Returned to chat mode.[/]\n");
-                continue;
-            }
-
             history.Add(new ChatMessage(ChatRole.User, userInput));
 
-            await ProcessUserInputAsync(chatClient, tools, history).ConfigureAwait(false);
+            await ProcessUserInputAsync(chatClient, tools, history, sessionTokens, telemetry).ConfigureAwait(false);
         }
     }
 
-    private static async Task ProcessUserInputAsync(IChatClient chatClient, ChatOptions tools, List<ChatMessage> history)
+    private static async Task<bool> HandleCommandAsync(ChatCommand command, List<ChatMessage> history, TokenUsageTracker sessionTokens, SpamFilterSettings settings, TelemetrySetup telemetry)
     {
+        switch (command)
+        {
+            case ChatCommand.Empty:
+                return true;
+
+            case ChatCommand.Clear:
+                history.Clear();
+                sessionTokens.Reset();
+                AnsiConsole.MarkupLine("[yellow]Chat history cleared.[/]\n");
+                return true;
+
+            case ChatCommand.Usage:
+                AnsiConsole.MarkupLine($"[cyan]Session: {sessionTokens.TotalInput:N0} in, {sessionTokens.TotalOutput:N0} out ({sessionTokens.Total:N0} total)[/]");
+                AnsiConsole.MarkupLine($"[cyan]History: {history.Count} messages[/]\n");
+                return true;
+
+            case ChatCommand.Spam:
+                await RunSpamFilterAgentAsync(settings, telemetry).ConfigureAwait(false);
+                AnsiConsole.MarkupLine("\n[dim]Returned to chat mode.[/]\n");
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private static async Task ProcessUserInputAsync(IChatClient chatClient, ChatOptions tools, List<ChatMessage> history, TokenUsageTracker sessionTokens, TelemetrySetup telemetry)
+    {
+        using var activity = telemetry.ActivitySource.StartActivity("ProcessUserInput");
+
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
@@ -243,15 +309,23 @@ internal static class Program
                     .Header("[green]Agent[/]")
                     .Border(BoxBorder.Rounded)
                     .BorderColor(Color.Green));
+
+                // Display usage status bar
+                DisplayUsageStatus(response.Usage, history.Count, sessionTokens);
+
                 AnsiConsole.WriteLine();
             }
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
         }
         catch (HttpRequestException ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             ShowError($"Network error: {ex.Message}");
         }
         catch (TaskCanceledException ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             ShowError($"Request timed out: {ex.Message}");
         }
     }
@@ -262,5 +336,56 @@ internal static class Program
             .Header("[red]Error[/]")
             .Border(BoxBorder.Rounded));
         AnsiConsole.WriteLine();
+    }
+
+    private static void DisplayUsageStatus(UsageDetails? usage, int historyCount, TokenUsageTracker sessionTokens)
+    {
+        var inputTokens = usage?.InputTokenCount ?? 0;
+        var outputTokens = usage?.OutputTokenCount ?? 0;
+
+        if (inputTokens > 0 || outputTokens > 0)
+        {
+            sessionTokens.Add(inputTokens, outputTokens);
+        }
+
+        // Build status line with key metrics
+        var table = new Table()
+            .Border(TableBorder.None)
+            .HideHeaders()
+            .AddColumn(new TableColumn(string.Empty).NoWrap());
+
+        var statusParts = new List<string>
+        {
+            $"[dim]This:[/] [blue]{inputTokens:N0}[/][dim]→[/][green]{outputTokens:N0}[/]",
+            $"[dim]Session:[/] [cyan]{sessionTokens.Total:N0}[/]",
+            $"[dim]History:[/] [yellow]{historyCount}[/] [dim]msgs[/]",
+        };
+
+        table.AddRow(string.Join("  [dim]│[/]  ", statusParts));
+        AnsiConsole.Write(table);
+    }
+
+    /// <summary>
+    /// Tracks cumulative token usage across a chat session.
+    /// </summary>
+    private sealed class TokenUsageTracker
+    {
+        public long TotalInput { get; private set; }
+
+        public long TotalOutput { get; private set; }
+
+        public long Total => this.TotalInput + this.TotalOutput;
+
+        public void Add(long input, long output)
+        {
+            this.TotalInput += input;
+            this.TotalOutput += output;
+        }
+
+        public void Reset()
+        {
+            this.TotalInput = 0;
+            this.TotalOutput = 0;
+        }
     }
 }
