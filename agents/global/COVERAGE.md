@@ -23,13 +23,13 @@ This is configured in the test project via Coverlet:
 </PropertyGroup>
 ```
 
-To adjust the threshold, update the `Threshold` value in `AgentDemo.Console.Tests.csproj`.
+To adjust the threshold, update the `Threshold` value in `HemSoft.PowerAI.Console.Tests.csproj`.
 
 ## Overview
 
 The project uses xUnit for testing with Coverlet for coverage analysis:
 
-- `tests/AgentDemo.Console.Tests/` - Unit tests for all components
+- `tests/HemSoft.PowerAI.Console.Tests/` - Unit tests for all components
 - `coverlet.collector` package for coverage collection
 
 ## Quick Start
@@ -37,7 +37,7 @@ The project uses xUnit for testing with Coverlet for coverage analysis:
 ### 1. Run Tests with Coverage
 
 ```bash
-dotnet test AgentDemo.sln --collect:"XPlat Code Coverage" --results-directory:TestResults
+dotnet test HemSoft.PowerAI.sln --collect:"XPlat Code Coverage" --results-directory:TestResults
 ```
 
 ### 2. Generate HTML Report
@@ -58,14 +58,14 @@ Open `CoverageReport\index.html` in your browser to see detailed coverage inform
 
 ### Test Projects
 
-- **AgentDemo.Console.Tests**: Main unit test project
+- **HemSoft.PowerAI.Console.Tests**: Main unit test project
   - Uses xUnit testing framework
   - Includes Moq for mocking
   - Has coverlet.collector for built-in coverage
 
 ### Source Projects Covered
 
-- **AgentDemo.Console**: Console application with AI agent and tools
+- **HemSoft.PowerAI.Console**: Console application with AI agent and tools
 
 ## Coverage Report Types
 
@@ -87,13 +87,13 @@ Open `CoverageReport\index.html` in your browser to see detailed coverage inform
 
 ```bash
 # Run all tests
-dotnet test AgentDemo.sln
+dotnet test HemSoft.PowerAI.sln
 
 # Run tests with minimal logging
-dotnet test AgentDemo.sln --logger "console;verbosity=minimal"
+dotnet test HemSoft.PowerAI.sln --logger "console;verbosity=minimal"
 
 # Run specific test project
-dotnet test tests/AgentDemo.Console.Tests/AgentDemo.Console.Tests.csproj
+dotnet test tests/HemSoft.PowerAI.Console.Tests/HemSoft.PowerAI.Console.Tests.csproj
 ```
 
 ### Coverage Analysis

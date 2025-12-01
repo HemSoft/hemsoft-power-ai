@@ -1,7 +1,7 @@
 ---
 title: "AGENTS.md"
-version: "1.0.15"
-lastModified: "2025-11-28"
+version: "1.0.17"
+lastModified: "2025-11-30"
 author: "Franz Hemmer"
 purpose: "Instructions for AI, LLM's, tools and agents."
 ---
@@ -24,6 +24,8 @@ purpose: "Instructions for AI, LLM's, tools and agents."
 - **Hardcoded URIs**: You are **strictly prohibited** from using `#pragma warning disable S1075` to suppress warnings about hardcoded URIs. You must properly configure URIs in configuration files or environment variables.
 - **StyleCop Exemptions**: You are **strictly prohibited** from adding exemptions for StyleCop rules (e.g., `dotnet_diagnostic.SAxxxx.severity = none`) in `.editorconfig`. This includes but is not limited to `SA1633` (File Headers) and `SA1101` (Prefix local calls with this). You must fix the code to comply with the rules.
 - **No Suppressions or Exclusions**: You are **strictly prohibited** from suppressing, disabling, or excluding ANY analyzer rule, warning, or error via any mechanism including but not limited to: `#pragma warning disable`, `[SuppressMessage]`, `[ExcludeFromCodeCoverage]`, `.editorconfig` severity changes, or any other suppression technique. You must fix the actual code to resolve the issue.
+- **No Coverage Exclusions**: You are **strictly prohibited** from adding files to `ExcludeByFile` in test project coverage settings to bypass coverage thresholds. You **MUST** write proper unit tests for all new code. The only files that may be excluded are entry points with external dependencies that cannot be reasonably unit tested (e.g., Program.cs). If you add new code, you must add tests - not exclusions.
+- **Tool Consolidation**: When adding new AI agent tool functionality, you **MUST** first check if an existing tool can be extended with a new `mode` parameter rather than creating a separate tool. Follow the "fewer tools, more power" principle from [MCP-GUIDELINES.md](./agents/global/MCP-GUIDELINES.md). For example, spam registry operations belong in the Mail tool as `spamlist`, `spamadd`, `spamcheck` modes—not as separate tools.
 
 ## CRITICAL: Strict Build Policy
 

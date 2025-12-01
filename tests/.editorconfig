@@ -1,0 +1,7 @@
+# Test project specific rules
+# Extends root .editorconfig
+
+[*.cs]
+# Disable ConfigureAwait requirement for test projects
+# xUnit1030 conflicts with RCS1090 - xUnit says tests should NOT use ConfigureAwait(false)
+dotnet_diagnostic.RCS1090.severity = none

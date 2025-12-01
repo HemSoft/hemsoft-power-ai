@@ -141,8 +141,8 @@ Closes #42
 2. **Run tests and build**:
 
    ```bash
-   dotnet build AgentDemo.sln
-   dotnet test AgentDemo.sln
+   dotnet build HemSoft.PowerAI.sln
+   dotnet test HemSoft.PowerAI.sln
    ```
 
 3. **Create PR** using `gh` CLI or GitHub web interface:

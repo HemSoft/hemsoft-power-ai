@@ -12,7 +12,7 @@ trim_trailing_whitespace = true
 # Core C# Coding Conventions
 csharp_style_namespace_declarations = file_scoped:warning
 csharp_using_directive_placement = inside_namespace:warning
-dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.IDE0005.severity = error
 dotnet_diagnostic.IDE0036.severity = warning
 
 # StyleCop SA1101 Compatibility - Prefer 'this.'
@@ -102,5 +102,18 @@ dotnet_diagnostic.SA1204.severity = warning
 
 # To disallow trailing comments (Warning)
 dotnet_diagnostic.SA1515.severity = warning
+
+# Roslynator Configuration
+roslynator_configure_await = true
+roslynator_prefix_field_identifier_with_underscore = false
+
+# Roslynator.Analyzers - Enforced Rules
+dotnet_diagnostic.RCS1090.severity = warning  # ConfigureAwait(false)
+dotnet_diagnostic.RCS1018.severity = warning  # Add accessibility modifiers
+dotnet_diagnostic.RCS1163.severity = warning  # Unused parameter
+
+# Roslynator.Formatting.Analyzers - Enforced Rules
+dotnet_diagnostic.RCS0056.severity = warning  # Line is too long (max 140)
+roslynator_max_line_length = 140
 
 

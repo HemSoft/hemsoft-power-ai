@@ -18,7 +18,7 @@ purpose: "Security guidelines, secret management, and data protection practices 
 
    ```bash
    # Set a user secret
-   dotnet user-secrets set "OPENROUTER_API_KEY" "your-key-here" --project src/AgentDemo.Console
+   dotnet user-secrets set "OPENROUTER_API_KEY" "your-key-here" --project src/HemSoft.PowerAI.Console
    ```
 
 2. **Environment Variables** - Use for CI/CD and production

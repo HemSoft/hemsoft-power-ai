@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Runs the Agent Demo application.
+    Runs the HemSoft Power AI application.
 
 .DESCRIPTION
     Supports multiple run modes:
@@ -63,8 +63,8 @@ switch ($Mode) {
     }
     'spam' {
         $env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4317"
-        $env:OTEL_SERVICE_NAME = "AgentDemo.SpamFilter"
-        Push-Location $PSScriptRoot/src/AgentDemo.Console
+        $env:OTEL_SERVICE_NAME = "HemSoft.PowerAI.SpamFilter"
+        Push-Location $PSScriptRoot/src/HemSoft.PowerAI.Console
         try {
             dotnet run -- spam
         }
@@ -74,8 +74,8 @@ switch ($Mode) {
     }
     default {
         $env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4317"
-        $env:OTEL_SERVICE_NAME = "AgentDemo.Console"
-        Push-Location $PSScriptRoot/src/AgentDemo.Console
+        $env:OTEL_SERVICE_NAME = "HemSoft.PowerAI.Console"
+        Push-Location $PSScriptRoot/src/HemSoft.PowerAI.Console
         try {
             dotnet run
         }

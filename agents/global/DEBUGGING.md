@@ -98,7 +98,7 @@ purpose: "Instructions and best practices for debugging the Agent Demo applicati
 
 ### Running the Application
 
-- Run via `dotnet run --project src/AgentDemo.Console` or use `run.ps1` script
+- Run via `dotnet run --project src/HemSoft.PowerAI.Console` or use `run.ps1` script
 - The application is interactive - type prompts and 'exit' to quit
 - Check console output for error panels and status updates
 
@@ -112,7 +112,7 @@ purpose: "Instructions and best practices for debugging the Agent Demo applicati
 
 ### Build Failures
 
-- Run `dotnet build AgentDemo.sln` to identify compilation errors
+- Run `dotnet build HemSoft.PowerAI.sln` to identify compilation errors
 - Check for missing using statements or namespace issues
 - Verify all project references are correct
 - Ensure NuGet packages are restored
@@ -144,10 +144,10 @@ purpose: "Instructions and best practices for debugging the Agent Demo applicati
 
 ```bash
 # Build the solution
-dotnet build AgentDemo.sln
+dotnet build HemSoft.PowerAI.sln
 
 # Run all tests
-dotnet test AgentDemo.sln
+dotnet test HemSoft.PowerAI.sln
 
 # Run tests with minimal output
 dotnet test --logger "console;verbosity=minimal"

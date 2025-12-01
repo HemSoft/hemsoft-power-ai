@@ -100,7 +100,7 @@ This project enforces a **STRICT** build policy. You must follow this workflow f
     - **Always run `dotnet format` before committing code.**
 
 2. **Strict Build Execution**:
-    - Run `dotnet build` on the solution (`AgentDemo.sln`).
+    - Run `dotnet build` on the solution (`HemSoft.PowerAI.sln`).
     - This command is configured to:
         - Run strict Markdown linting (via `npm run lint:md`).
         - Treat all C# warnings as errors (`TreatWarningsAsErrors=true`).

@@ -49,9 +49,9 @@ High-level components:
 
 | Layer | Project | Role |
 |-------|---------|------|
-| Entry / Runtime | `AgentDemo.Console` | Console application with interactive chat loop, tool registration, and AI client setup |
-| Tools | `AgentDemo.Console/Tools` | File system tools exposed to the AI agent |
-| Tests | `AgentDemo.Console.Tests` | Unit tests for tool functions |
+| Entry / Runtime | `HemSoft.PowerAI.Console` | Console application with interactive chat loop, tool registration, and AI client setup |
+| Tools | `HemSoft.PowerAI.Console/Tools` | File system tools exposed to the AI agent |
+| Tests | `HemSoft.PowerAI.Console.Tests` | Unit tests for tool functions |
 
 Execution flow (happy path):
 
@@ -135,7 +135,7 @@ public static string MyTool(
 
 Test patterns:
 
-- Unit tests for tool functions in `AgentDemo.Console.Tests`
+- Unit tests for tool functions in `HemSoft.PowerAI.Console.Tests`
 - Test success paths, error paths, and edge cases
 - Use xUnit with Moq for mocking when needed
 

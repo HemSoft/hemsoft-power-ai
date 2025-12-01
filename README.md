@@ -1,6 +1,6 @@
-# Agent Demo
+# HemSoft Power AI
 
-AI agent demo using Microsoft.Extensions.AI with tool-calling capabilities via OpenRouter.
+Powerful AI command-line tools using Microsoft.Extensions.AI with tool-calling capabilities via OpenRouter.
 
 ## Features
 
@@ -36,7 +36,7 @@ AI agent demo using Microsoft.Extensions.AI with tool-calling capabilities via O
 Or:
 
 ```powershell
-dotnet run --project src/AgentDemo.Console
+dotnet run --project src/HemSoft.PowerAI.Console
 ```
 
 ## Commands
