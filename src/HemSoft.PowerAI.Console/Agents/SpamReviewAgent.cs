@@ -4,6 +4,8 @@
 
 namespace HemSoft.PowerAI.Console.Agents;
 
+using System.Diagnostics.CodeAnalysis;
+
 using HemSoft.PowerAI.Console.Configuration;
 using HemSoft.PowerAI.Console.Models;
 using HemSoft.PowerAI.Console.Services;
@@ -15,6 +17,7 @@ using Spectre.Console;
 /// Processes domains in batches and adds confirmed spam domains to the blocklist.
 /// </summary>
 /// <param name="settings">The spam filter settings.</param>
+[ExcludeFromCodeCoverage(Justification = "Agent requires interactive console and file I/O")]
 internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
 {
     private readonly HumanReviewService humanReviewService = new(settings);

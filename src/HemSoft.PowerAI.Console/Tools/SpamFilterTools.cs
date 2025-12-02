@@ -6,6 +6,7 @@ namespace HemSoft.PowerAI.Console.Tools;
 
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -26,6 +27,7 @@ internal delegate void EmailEvaluatedCallback(EmailEvaluation evaluation);
 /// <summary>
 /// Provides spam filtering tools for the AI agent.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Tools require Graph API authentication")]
 internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisposable
 {
     private const string FolderInbox = "inbox";

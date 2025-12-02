@@ -5,6 +5,7 @@
 namespace HemSoft.PowerAI.Console.Agents;
 
 using System.ClientModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 
@@ -23,6 +24,7 @@ using Spectre.Console;
 /// <summary>
 /// Agent that orchestrates the spam filtering workflow.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Agent requires external API calls")]
 internal sealed class SpamFilterAgent : IDisposable
 {
     private const string ModelId = "x-ai/grok-4.1-fast:free";

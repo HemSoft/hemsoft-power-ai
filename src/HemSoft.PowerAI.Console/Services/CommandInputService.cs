@@ -4,11 +4,14 @@
 
 namespace HemSoft.PowerAI.Console.Services;
 
+using System.Diagnostics.CodeAnalysis;
+
 using Spectre.Console;
 
 /// <summary>
 /// Provides interactive command input with autocomplete suggestions.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Interactive console input cannot be unit tested")]
 internal static class CommandInputService
 {
     private const string InputPrompt = "[yellow]You:[/] ";

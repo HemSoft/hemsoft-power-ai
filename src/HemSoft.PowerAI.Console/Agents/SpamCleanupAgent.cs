@@ -5,6 +5,7 @@
 namespace HemSoft.PowerAI.Console.Agents;
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 using HemSoft.PowerAI.Console.Configuration;
 using HemSoft.PowerAI.Console.Services;
@@ -18,6 +19,7 @@ using Spectre.Console;
 /// Agent that moves emails from blocked domains to junk.
 /// </summary>
 /// <param name="settings">The spam filter settings.</param>
+[ExcludeFromCodeCoverage(Justification = "Agent requires Graph API authentication")]
 internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposable
 {
     private const string FolderInbox = "inbox";

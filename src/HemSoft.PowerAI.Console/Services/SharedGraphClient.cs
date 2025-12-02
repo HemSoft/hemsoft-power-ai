@@ -4,6 +4,8 @@
 
 namespace HemSoft.PowerAI.Console.Services;
 
+using System.Diagnostics.CodeAnalysis;
+
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Extensions.Msal;
@@ -13,6 +15,7 @@ using Microsoft.Identity.Client.Extensions.Msal;
 /// Ensures only one device code authentication flow is triggered.
 /// Uses MSAL directly with proper cross-platform token cache persistence.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Authentication infrastructure requires interactive login")]
 internal sealed class SharedGraphClient : IDisposable
 {
     /// <summary>

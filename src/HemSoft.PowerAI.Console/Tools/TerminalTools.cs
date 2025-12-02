@@ -6,12 +6,14 @@ namespace HemSoft.PowerAI.Console.Tools;
 
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
 /// <summary>
 /// Provides unified terminal access for the AI agent.
 /// Combines command execution, file operations, and process management in a single tool.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Process execution cannot be reliably unit tested")]
 internal static class TerminalTools
 {
     private const int MaxOutputLength = 8192;

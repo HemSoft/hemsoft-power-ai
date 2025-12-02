@@ -6,6 +6,7 @@ namespace HemSoft.PowerAI.Console.Agents;
 
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 
@@ -24,6 +25,7 @@ internal delegate void ScanResultCallback(SpamScanAgent.ScanResult result);
 /// </summary>
 /// <param name="storageService">The spam storage service.</param>
 /// <param name="humanReviewService">The human review service.</param>
+[ExcludeFromCodeCoverage(Justification = "Tools require Graph API authentication")]
 internal sealed class SpamScanTools(SpamStorageService storageService, HumanReviewService humanReviewService) : IDisposable
 {
     private const string FolderInbox = "inbox";

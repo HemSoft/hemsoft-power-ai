@@ -5,6 +5,7 @@
 namespace HemSoft.PowerAI.Console.Tools;
 
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +14,7 @@ using System.Text.Json.Serialization;
 /// <summary>
 /// Provides web search capabilities for the AI agent using Tavily API.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Requires Tavily API key")]
 internal static class WebSearchTools
 {
     private const string ApiUrlEnvVar = "TAVILY_API_URL";

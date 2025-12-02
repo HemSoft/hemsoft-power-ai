@@ -6,6 +6,7 @@ namespace HemSoft.PowerAI.Console;
 
 using System.ClientModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 using HemSoft.PowerAI.Console.Agents;
 using HemSoft.PowerAI.Console.Configuration;
@@ -24,6 +25,7 @@ using Spectre.Console;
 /// <summary>
 /// Main entry point for the Agent Demo console application.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Application entry point with interactive console and external API dependencies")]
 internal static partial class Program
 {
     private const string SourceName = "HemSoft.PowerAI.Console";
@@ -49,7 +51,7 @@ internal static partial class Program
     /// <summary>
     /// Application entry point.
     /// </summary>
-    /// <param name="args">Command line arguments. Use 'spam' to run spam filter agent.</param>
+    /// <param name="args">Command line arguments. Use 'spam' to run spam filter agent, or pass a prompt to execute and exit.</param>
     /// <returns>Exit code (0 for success, 1 for configuration error).</returns>
     public static async Task<int> Main(string[] args)
     {
@@ -66,9 +68,104 @@ internal static partial class Program
         var settings = new SpamFilterSettings();
         configuration.GetSection(SpamFilterSettings.SectionName).Bind(settings);
 
-        return args.Length > 0 && args[0].Equals("spam", StringComparison.OrdinalIgnoreCase)
-            ? await RunSpamFilterAgentAsync(settings, telemetry).ConfigureAwait(false)
-            : await RunInteractiveChatAsync(settings, telemetry).ConfigureAwait(false);
+        if (args.Length == 0)
+        {
+            return await RunInteractiveChatAsync(settings, telemetry).ConfigureAwait(false);
+        }
+
+        // Check for special commands
+        if (args[0].Equals("spam", StringComparison.OrdinalIgnoreCase))
+        {
+            return await RunSpamFilterAgentAsync(settings, telemetry).ConfigureAwait(false);
+        }
+
+        // Treat all arguments as a prompt to execute once and exit
+        var prompt = string.Join(" ", args);
+        return await RunSinglePromptAsync(prompt, settings, telemetry).ConfigureAwait(false);
+    }
+
+    private static async Task<int> RunSinglePromptAsync(string prompt, SpamFilterSettings settings, TelemetrySetup telemetry)
+    {
+        using var activity = telemetry.ActivitySource.StartActivity("RunSinglePrompt");
+
+        var openRouterBaseUrlValue = Environment.GetEnvironmentVariable(OpenRouterBaseUrlEnvVar);
+        if (string.IsNullOrEmpty(openRouterBaseUrlValue))
+        {
+            AnsiConsole.MarkupLine($"[red]Missing {OpenRouterBaseUrlEnvVar} environment variable.[/]");
+            activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_BASE_URL");
+            return 1;
+        }
+
+        var openRouterBaseUrl = new Uri(openRouterBaseUrlValue);
+
+        const string apiKeyEnvVar = "OPENROUTER_API_KEY";
+        var apiKey = Environment.GetEnvironmentVariable(apiKeyEnvVar);
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            AnsiConsole.MarkupLine($"[red]Missing {apiKeyEnvVar} environment variable.[/]");
+            activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_API_KEY");
+            return 1;
+        }
+
+        var openAiClient = new OpenAIClient(
+            new ApiKeyCredential(apiKey),
+            new OpenAIClientOptions { Endpoint = openRouterBaseUrl });
+
+        var chatClient = openAiClient
+            .GetChatClient(ModelId)
+            .AsIChatClient()
+            .AsBuilder()
+            .UseFunctionInvocation()
+            .Build();
+
+        OutlookMailTools.InitializeSpamStorage(settings);
+
+        var tools = new ChatOptions
+        {
+            Tools =
+            [
+                AIFunctionFactory.Create(TerminalTools.Terminal),
+                AIFunctionFactory.Create(WebSearchTools.WebSearchAsync),
+                AIFunctionFactory.Create(OutlookMailTools.MailAsync),
+            ],
+        };
+
+        List<ChatMessage> history = [new(ChatRole.User, prompt)];
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+            var response = await chatClient.GetResponseAsync(history, tools, cts.Token).ConfigureAwait(false);
+
+            var assistantMessage = response.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant);
+            var responseText = assistantMessage?.Text ?? "[No response]";
+
+            AnsiConsole.Write(new Panel(Markup.Escape(responseText))
+                .Header("[green]Agent[/]")
+                .Border(BoxBorder.Rounded)
+                .BorderColor(Color.Green));
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            return 0;
+        }
+        catch (HttpRequestException ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Network error: {Markup.Escape(ex.Message)}[/]");
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            return 1;
+        }
+        catch (TaskCanceledException ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Request timed out: {Markup.Escape(ex.Message)}[/]");
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            return 1;
+        }
+        catch (InvalidOperationException ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Error: {Markup.Escape(ex.Message)}[/]");
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            return 1;
+        }
     }
 
     private static async Task<int> RunSpamFilterAgentAsync(SpamFilterSettings settings, TelemetrySetup telemetry)

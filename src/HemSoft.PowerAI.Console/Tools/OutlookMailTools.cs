@@ -5,6 +5,7 @@
 namespace HemSoft.PowerAI.Console.Tools;
 
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -23,6 +24,7 @@ using Microsoft.Identity.Client;
 /// <summary>
 /// Provides Outlook/Hotmail mail tools for the AI agent using Microsoft Graph.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Graph API operations require authentication")]
 internal static class OutlookMailTools
 {
     private const string AuthError = "authentication";

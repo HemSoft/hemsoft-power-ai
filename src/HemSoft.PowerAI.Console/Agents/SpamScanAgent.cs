@@ -5,6 +5,7 @@
 namespace HemSoft.PowerAI.Console.Agents;
 
 using System.ClientModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 using HemSoft.PowerAI.Console.Configuration;
@@ -21,6 +22,7 @@ using Spectre.Console;
 /// Autonomous agent that scans the inbox for spam and identifies domains for human review.
 /// Does not delete emails - only identifies suspicious domains and adds them to HumanReview.json.
 /// </summary>
+[ExcludeFromCodeCoverage(Justification = "Agent requires OpenRouter API and Graph API authentication")]
 internal sealed class SpamScanAgent : IDisposable
 {
     private const string ModelId = "x-ai/grok-4.1-fast:free";
