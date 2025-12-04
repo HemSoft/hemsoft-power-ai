@@ -30,7 +30,7 @@ internal sealed class SharedGraphClient : IDisposable
     private static readonly Uri DefaultAuthorityBaseUri = new("https://login.microsoftonline.com/");
     private static readonly string[] Scopes = ["User.Read", "Mail.Read", "Mail.ReadWrite", "Mail.Send"];
 
-    private static readonly object LockObject = new();
+    private static readonly Lock LockObject = new();
     private static SharedGraphClient? instance;
 
     private readonly GraphServiceClient? graphClient;

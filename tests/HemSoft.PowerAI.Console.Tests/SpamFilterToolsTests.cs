@@ -191,8 +191,8 @@ public class SpamFilterToolsTests : IDisposable
         // Assert
         var candidates = this.storageService.GetSpamCandidates();
         Assert.Equal(2, candidates.Count);
-        Assert.Equal(1.0, candidates.Find(c => c.MessageId == "msg1")?.ConfidenceScore);
-        Assert.Equal(0.0, candidates.Find(c => c.MessageId == "msg2")?.ConfidenceScore);
+        Assert.Equal(1.0, candidates.Find(c => string.Equals(c.MessageId, "msg1", StringComparison.Ordinal))?.ConfidenceScore);
+        Assert.Equal(0.0, candidates.Find(c => string.Equals(c.MessageId, "msg2", StringComparison.Ordinal))?.ConfidenceScore);
     }
 
     /// <summary>

@@ -264,7 +264,10 @@ public class SpamReviewAgentTests : IDisposable
     public void ConstructorHandlesNullSettings() =>
 
         // Act & Assert - NullReferenceException is thrown when services try to access null settings
-        Assert.Throws<NullReferenceException>(() => new SpamReviewAgent(null!));
+        Assert.Throws<NullReferenceException>(() =>
+        {
+            using var agent = new SpamReviewAgent(null!);
+        });
 
     /// <summary>
     /// Tests that ReviewStats handles large values.

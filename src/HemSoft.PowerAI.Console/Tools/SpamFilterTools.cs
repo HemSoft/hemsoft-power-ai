@@ -126,6 +126,7 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
             var fetchSize = Math.Min(batchSize * 3, 50);
             var messages = await client.Me.MailFolders[FolderInbox].Messages.GetAsync(config =>
             {
+                config.Headers.Add("Prefer", "IdType=\"ImmutableId\"");
                 config.QueryParameters.Top = fetchSize;
                 config.QueryParameters.Select = ["id", "subject", "from", "receivedDateTime", "isRead"];
                 config.QueryParameters.Orderby = ["receivedDateTime desc"];
@@ -363,7 +364,8 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
                 c.Subject,
                 c.SpamReason,
                 c.ConfidenceScore,
-            }));
+            }),
+            StringComparer.OrdinalIgnoreCase);
 
         return JsonSerializer.Serialize(result);
     }
@@ -460,8 +462,18 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
         }
 
         // Strip HTML tags for a cleaner preview
-        var text = System.Text.RegularExpressions.Regex.Replace(body, "<[^>]+>", " ");
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+        var text = System.Text.RegularExpressions.Regex.Replace(
+            body,
+            "<[^>]+>",
+            " ",
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(1));
+        text = System.Text.RegularExpressions.Regex.Replace(
+            text,
+            @"\s+",
+            " ",
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(1)).Trim();
 
         return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }

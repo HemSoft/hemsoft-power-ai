@@ -131,7 +131,7 @@ internal static class OutlookMailTools
 
         var ids = messageIds
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct()
+            .Distinct(StringComparer.Ordinal)
             .ToList();
 
         if (ids.Count == 0)
@@ -182,7 +182,7 @@ internal static class OutlookMailTools
     {
         var normalizedMode = mode?.ToUpperInvariant() ?? "UNKNOWN";
 
-        if (normalizedMode != lastOperation)
+        if (!string.Equals(normalizedMode, lastOperation, StringComparison.Ordinal))
         {
             // New operation type - print it once
             lastOperation = normalizedMode;
@@ -198,6 +198,7 @@ internal static class OutlookMailTools
 
             var messages = await client.Me.MailFolders[wellKnownFolder].Messages.GetAsync(config =>
             {
+                config.Headers.Add("Prefer", "IdType=\"ImmutableId\"");
                 config.QueryParameters.Top = maxResults;
                 config.QueryParameters.Select = ["id", "subject", "from", "receivedDateTime", "isRead", "parentFolderId"];
                 config.QueryParameters.Orderby = ["receivedDateTime desc"];
@@ -305,6 +306,7 @@ internal static class OutlookMailTools
             var messages = await client.Me.Messages.GetAsync(
                 config =>
                 {
+                    config.Headers.Add("Prefer", "IdType=\"ImmutableId\"");
                     config.QueryParameters.Top = maxResults;
                     config.QueryParameters.Search = $"\"{query}\"";
                     config.QueryParameters.Select = ["id", "subject", "from", "receivedDateTime", "parentFolderId"];
@@ -342,16 +344,17 @@ internal static class OutlookMailTools
 
         try
         {
-            // Try folder-scoped delete first (inbox), fall back to root Messages
+            // Try root messages path first (works for messages from any folder, returned by search)
+            // Fall back to folder-scoped path if root fails
             try
             {
-                await client.Me.MailFolders[FolderInbox].Messages[messageId].DeleteAsync().ConfigureAwait(false);
+                await client.Me.Messages[messageId].DeleteAsync().ConfigureAwait(false);
                 return $"Deleted message {messageId[..8]}";
             }
             catch (ODataError)
             {
-                // Message might not be in inbox, try root path
-                await client.Me.Messages[messageId].DeleteAsync().ConfigureAwait(false);
+                // Message might need folder-specific path, try inbox
+                await client.Me.MailFolders[FolderInbox].Messages[messageId].DeleteAsync().ConfigureAwait(false);
                 return $"Deleted message {messageId[..8]}";
             }
         }
@@ -380,11 +383,12 @@ internal static class OutlookMailTools
 
         try
         {
-            // Try folder-scoped move first (inbox), fall back to root Messages
+            // Try root messages path first (works for messages from any folder, returned by search)
+            // Fall back to folder-scoped path if root fails
             try
             {
-                await client.Me.MailFolders[FolderInbox].Messages[messageId].Move.PostAsync(
-                    new Microsoft.Graph.Me.MailFolders.Item.Messages.Item.Move.MovePostRequestBody
+                await client.Me.Messages[messageId].Move.PostAsync(
+                    new Microsoft.Graph.Me.Messages.Item.Move.MovePostRequestBody
                     {
                         DestinationId = destination,
                     }).ConfigureAwait(false);
@@ -392,9 +396,9 @@ internal static class OutlookMailTools
             }
             catch (ODataError)
             {
-                // Message might not be in inbox, try root path
-                await client.Me.Messages[messageId].Move.PostAsync(
-                    new Microsoft.Graph.Me.Messages.Item.Move.MovePostRequestBody
+                // Message might need folder-specific path, try inbox
+                await client.Me.MailFolders[FolderInbox].Messages[messageId].Move.PostAsync(
+                    new Microsoft.Graph.Me.MailFolders.Item.Messages.Item.Move.MovePostRequestBody
                     {
                         DestinationId = destination,
                     }).ConfigureAwait(false);
@@ -521,13 +525,15 @@ internal static class OutlookMailTools
 
     private static async Task DeleteFromInboxOrRootAsync(GraphServiceClient client, string messageId)
     {
+        // Try root messages path first (works for messages from any folder, returned by search)
+        // Fall back to folder-scoped path if root fails
         try
         {
-            await client.Me.MailFolders[FolderInbox].Messages[messageId].DeleteAsync().ConfigureAwait(false);
+            await client.Me.Messages[messageId].DeleteAsync().ConfigureAwait(false);
         }
         catch (ODataError)
         {
-            await client.Me.Messages[messageId].DeleteAsync().ConfigureAwait(false);
+            await client.Me.MailFolders[FolderInbox].Messages[messageId].DeleteAsync().ConfigureAwait(false);
         }
     }
 

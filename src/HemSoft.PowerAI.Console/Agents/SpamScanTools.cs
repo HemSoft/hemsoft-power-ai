@@ -267,8 +267,18 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
             return string.Empty;
         }
 
-        var text = System.Text.RegularExpressions.Regex.Replace(body, "<[^>]+>", " ");
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+        var text = System.Text.RegularExpressions.Regex.Replace(
+            body,
+            "<[^>]+>",
+            " ",
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(1));
+        text = System.Text.RegularExpressions.Regex.Replace(
+            text,
+            @"\s+",
+            " ",
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(1)).Trim();
 
         return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }

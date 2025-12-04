@@ -929,7 +929,7 @@ public class SpamScanToolsTests : IDisposable
         // Assert
         Assert.NotNull(result1);
         Assert.Equal("domain1.com", result1.Domain);
-        Assert.Null(result2?.Domain == "domain2.com" ? result2 : null); // result2 should not have domain2
+        Assert.Null(string.Equals(result2?.Domain, "domain2.com", StringComparison.Ordinal) ? result2 : null); // result2 should not have domain2
         Assert.NotNull(result2);
         Assert.Equal("domain3.com", result2.Domain);
     }

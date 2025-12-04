@@ -155,8 +155,8 @@ public class SpamFilterAgentTests : IDisposable
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
 
-        // Act
-        var result = method.Invoke(null, ["5 EMAILS PROCESSED", @"(\d+)\s*(?:EMAILS?\s*)?PROCESSED|PROCESSED\s*(\d+)"]);
+        // Act - use named groups to match the updated implementation
+        var result = method.Invoke(null, ["5 EMAILS PROCESSED", @"(?<num1>\d+)\s*(?:EMAILS?\s*)?PROCESSED|PROCESSED\s*(?<num2>\d+)"]);
 
         // Assert
         Assert.Equal(5, result);
@@ -174,8 +174,8 @@ public class SpamFilterAgentTests : IDisposable
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
 
-        // Act
-        var result = method.Invoke(null, ["no numbers here", @"(\d+)"]);
+        // Act - use named group to match the updated implementation
+        var result = method.Invoke(null, ["no numbers here", @"(?<num1>\d+)"]);
 
         // Assert
         Assert.Equal(0, result);

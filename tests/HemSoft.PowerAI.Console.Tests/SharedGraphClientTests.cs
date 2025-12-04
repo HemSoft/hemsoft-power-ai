@@ -39,7 +39,7 @@ public sealed class SharedGraphClientTests : IDisposable
         Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", null);
 
         // Act
-        var client = SharedGraphClient.GetClient();
+        using var client = SharedGraphClient.GetClient();
 
         // Assert
         Assert.Null(client);
@@ -126,14 +126,14 @@ public sealed class SharedGraphClientTests : IDisposable
         }
 
         // First call to GetClient when not configured returns null
-        var firstResult = SharedGraphClient.GetClient();
+        using var firstResult = SharedGraphClient.GetClient();
         Assert.Null(firstResult);
 
         // Reset should not throw
         SharedGraphClient.Reset();
 
         // Subsequent call should still return null (since not configured)
-        var secondResult = SharedGraphClient.GetClient();
+        using var secondResult = SharedGraphClient.GetClient();
         Assert.Null(secondResult);
     }
 
@@ -151,8 +151,8 @@ public sealed class SharedGraphClientTests : IDisposable
         }
 
         // When not configured, should consistently return null
-        var first = SharedGraphClient.GetClient();
-        var second = SharedGraphClient.GetClient();
+        using var first = SharedGraphClient.GetClient();
+        using var second = SharedGraphClient.GetClient();
 
         Assert.Null(first);
         Assert.Null(second);

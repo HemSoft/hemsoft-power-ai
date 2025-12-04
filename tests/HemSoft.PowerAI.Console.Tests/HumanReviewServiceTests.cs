@@ -461,9 +461,9 @@ public class HumanReviewServiceTests : IDisposable
 
         // Assert
         Assert.Equal(3, domains.Count);
-        Assert.Contains(domains, d => d.Domain == "DOMAIN1.COM");
-        Assert.Contains(domains, d => d.Domain == "DOMAIN2.COM");
-        Assert.Contains(domains, d => d.Domain == "DOMAIN3.COM");
+        Assert.Contains(domains, d => string.Equals(d.Domain, "DOMAIN1.COM", StringComparison.Ordinal));
+        Assert.Contains(domains, d => string.Equals(d.Domain, "DOMAIN2.COM", StringComparison.Ordinal));
+        Assert.Contains(domains, d => string.Equals(d.Domain, "DOMAIN3.COM", StringComparison.Ordinal));
     }
 
     /// <summary>

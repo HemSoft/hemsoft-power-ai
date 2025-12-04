@@ -179,7 +179,10 @@ public class SpamCleanupAgentTests : IDisposable
         // Act & Assert
         // Note: This will throw NullReferenceException from SpamStorageService
         // when it tries to access properties on the null settings
-        Assert.Throws<NullReferenceException>(() => new SpamCleanupAgent(null!));
+        Assert.Throws<NullReferenceException>(() =>
+        {
+            using var agent = new SpamCleanupAgent(null!);
+        });
 
     /// <summary>
     /// Tests that CleanupStats can be reset to zero.

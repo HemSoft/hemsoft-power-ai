@@ -23,7 +23,7 @@ internal sealed class HumanReviewService
     };
 
     private readonly string humanReviewPath;
-    private readonly object lockObject = new();
+    private readonly Lock lockObject = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HumanReviewService"/> class.
@@ -103,7 +103,7 @@ internal sealed class HumanReviewService
 
             // Add sample if we have room and this message isn't already in samples
             if (existing.Samples.Count < MaxSamplesPerDomain &&
-                !existing.Samples.Any(s => s.MessageId == messageId))
+                !existing.Samples.Any(s => string.Equals(s.MessageId, messageId, StringComparison.Ordinal)))
             {
                 existing.Samples.Add(new HumanReviewSample
                 {
@@ -157,7 +157,7 @@ internal sealed class HumanReviewService
             var json = File.ReadAllText(this.humanReviewPath);
             var file = JsonSerializer.Deserialize<HumanReviewFile>(json, JsonOptions) ?? new HumanReviewFile();
 
-            var normalizedDomains = domains.Select(d => d.ToUpperInvariant()).ToHashSet();
+            var normalizedDomains = domains.Select(d => d.ToUpperInvariant()).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var originalCount = file.Domains.Count;
 
             var toKeep = file.Domains
@@ -195,7 +195,7 @@ internal sealed class HumanReviewService
     public bool IsPendingReview(string domain)
     {
         var domains = this.GetPendingDomains();
-        return domains.Exists(d => d.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase));
+        return domains.Exists(d => string.Equals(d.Domain, domain, StringComparison.OrdinalIgnoreCase));
     }
 
     private void EnsureFileExists()

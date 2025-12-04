@@ -23,7 +23,7 @@ internal sealed class FileTraceExporter : BaseExporter<Activity>
 
     private readonly string traceDirectory;
     private readonly int retentionDays;
-    private readonly object fileLock = new();
+    private readonly Lock fileLock = new();
     private string currentFilePath;
     private DateTime currentFileDate;
 
@@ -78,7 +78,7 @@ internal sealed class FileTraceExporter : BaseExporter<Activity>
 
     private static TraceRecord ConvertActivityToTrace(Activity activity)
     {
-        var tags = new Dictionary<string, object?>();
+        var tags = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var tag in activity.Tags)
         {
             tags[tag.Key] = tag.Value;
@@ -88,7 +88,7 @@ internal sealed class FileTraceExporter : BaseExporter<Activity>
         {
             Name = e.Name,
             Timestamp = e.Timestamp.ToString("o", CultureInfo.InvariantCulture),
-            Attributes = e.Tags.ToDictionary(t => t.Key, t => t.Value as object),
+            Attributes = e.Tags.ToDictionary(t => t.Key, t => t.Value as object, StringComparer.Ordinal),
         }).ToList();
 
         return new TraceRecord

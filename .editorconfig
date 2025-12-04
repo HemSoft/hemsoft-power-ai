@@ -116,4 +116,11 @@ dotnet_diagnostic.RCS1163.severity = warning  # Unused parameter
 dotnet_diagnostic.RCS0056.severity = warning  # Line is too long (max 140)
 roslynator_max_line_length = 140
 
+# Meziantou.Analyzer Configuration
+# MA0048: File name must match type name - allow multiple types per file (delegates with classes)
+dotnet_diagnostic.MA0048.severity = none
+# MA0051: Method is too long - increase threshold to 100 lines for realistic agent code
+dotnet_diagnostic.MA0051.severity = warning
+MA0051.maximum_lines_per_method = 100
+
 

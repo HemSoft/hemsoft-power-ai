@@ -763,7 +763,10 @@ public class SpamScanAgentTests : IDisposable
     public void ConstructorThrowsForNullSettings() =>
 
         // Act & Assert
-        Assert.Throws<NullReferenceException>(() => new SpamScanAgent(null!));
+        Assert.Throws<NullReferenceException>(() =>
+        {
+            using var agent = new SpamScanAgent(null!);
+        });
 
     /// <summary>
     /// Tests that CreateChatClient returns error when base URL is missing.

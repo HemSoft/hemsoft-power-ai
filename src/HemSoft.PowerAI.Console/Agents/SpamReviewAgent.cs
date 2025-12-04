@@ -5,6 +5,7 @@
 namespace HemSoft.PowerAI.Console.Agents;
 
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
 using HemSoft.PowerAI.Console.Configuration;
 using HemSoft.PowerAI.Console.Models;
@@ -205,12 +206,12 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
             .AddColumn(new TableColumn("[blue]Reason[/]").Width(40));
 
         var index = 1;
-        foreach (var domain in domains.OrderBy(d => d.Domain))
+        foreach (var domain in domains.OrderBy(d => d.Domain, StringComparer.OrdinalIgnoreCase))
         {
             table.AddRow(
                 $"[cyan]{index++}[/]",
                 Markup.Escape(domain.Domain),
-                domain.AddedAt.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                domain.AddedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 Markup.Escape(Truncate(domain.Reason ?? "-", 38)));
         }
 
@@ -259,7 +260,7 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
         {
             legitIndices = [.. input
                 .Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)
-                .Select(s => int.TryParse(s.Trim(), out var n) ? n : 0)
+                .Select(s => int.TryParse(s.Trim(), CultureInfo.InvariantCulture, out var n) ? n : 0)
                 .Where(n => n > 0 && n <= batch.Count)];
         }
 

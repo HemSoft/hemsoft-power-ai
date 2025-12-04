@@ -69,7 +69,7 @@ public sealed class FileTraceExporterTests : IDisposable
         activity?.Stop();
 
         // Act
-        var batch = new Batch<Activity>([activity!], 1);
+        using var batch = new Batch<Activity>([activity!], 1);
         var result = exporter.Export(in batch);
 
         // Assert
@@ -94,7 +94,7 @@ public sealed class FileTraceExporterTests : IDisposable
         using var exporter = new FileTraceExporter(this.testDirectory, retentionDays: 7);
 
         // Act
-        var batch = new Batch<Activity>([], 0);
+        using var batch = new Batch<Activity>([], 0);
         var result = exporter.Export(in batch);
 
         // Assert

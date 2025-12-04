@@ -92,44 +92,47 @@ internal sealed class SpamScanAgent : IDisposable
             return;
         }
 
-        var agent = this.CreateAgent(chatClient);
-        DisplayHeader(this.settings);
-
-        var stats = new RunStats();
-        var consecutiveEmptyBatches = 0;
-
-        while (!cancellationToken.IsCancellationRequested)
+        using (chatClient)
         {
-            stats.Iteration++;
-            AnsiConsole.MarkupLine($"\n[blue]═══ Scan Batch {stats.Iteration} ═══[/]");
+            var agent = this.CreateAgent(chatClient);
+            DisplayHeader(this.settings);
 
-            var batchResult = await this.ProcessScanBatchAsync(agent, this.settings.BatchSize, cancellationToken).ConfigureAwait(false);
+            var stats = new RunStats();
+            var consecutiveEmptyBatches = 0;
 
-            if (batchResult.InboxWasEmpty)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                consecutiveEmptyBatches++;
-                if (consecutiveEmptyBatches >= 2)
+                stats.Iteration++;
+                AnsiConsole.MarkupLine($"\n[blue]═══ Scan Batch {stats.Iteration} ═══[/]");
+
+                var batchResult = await this.ProcessScanBatchAsync(agent, this.settings.BatchSize, cancellationToken).ConfigureAwait(false);
+
+                if (batchResult.InboxWasEmpty)
                 {
-                    break;
+                    consecutiveEmptyBatches++;
+                    if (consecutiveEmptyBatches >= 2)
+                    {
+                        break;
+                    }
+
+                    AnsiConsole.MarkupLine("[dim]No more emails to scan.[/]");
+                    await Task.Delay(this.settings.DelayBetweenBatchesSeconds * 1000, cancellationToken).ConfigureAwait(false);
+                    continue;
                 }
 
-                AnsiConsole.MarkupLine("[dim]No more emails to scan.[/]");
+                consecutiveEmptyBatches = 0;
+                stats.TotalProcessed += batchResult.Processed;
+                stats.TotalSkippedKnown += batchResult.SkippedKnown;
+                stats.TotalSkippedPending += batchResult.SkippedPending;
+                stats.TotalFlagged += batchResult.Flagged;
+
+                AnsiConsole.MarkupLine($"[dim]Running totals: {stats.TotalProcessed} processed, {stats.TotalFlagged} flagged[/]");
+
                 await Task.Delay(this.settings.DelayBetweenBatchesSeconds * 1000, cancellationToken).ConfigureAwait(false);
-                continue;
             }
 
-            consecutiveEmptyBatches = 0;
-            stats.TotalProcessed += batchResult.Processed;
-            stats.TotalSkippedKnown += batchResult.SkippedKnown;
-            stats.TotalSkippedPending += batchResult.SkippedPending;
-            stats.TotalFlagged += batchResult.Flagged;
-
-            AnsiConsole.MarkupLine($"[dim]Running totals: {stats.TotalProcessed} processed, {stats.TotalFlagged} flagged[/]");
-
-            await Task.Delay(this.settings.DelayBetweenBatchesSeconds * 1000, cancellationToken).ConfigureAwait(false);
+            DisplayFinalSummary(stats, this.tools.GetPendingReviewCount());
         }
-
-        DisplayFinalSummary(stats, this.tools.GetPendingReviewCount());
     }
 
     /// <inheritdoc/>
@@ -190,12 +193,7 @@ internal sealed class SpamScanAgent : IDisposable
             new ApiKeyCredential(apiKey),
             new OpenAIClientOptions { Endpoint = new Uri(baseUrlValue) });
 
-        var chatClient = openAiClient
-            .GetChatClient(ModelId)
-            .AsIChatClient()
-            .AsBuilder()
-            .UseFunctionInvocation()
-            .Build();
+        var chatClient = CompositeDisposableChatClient.CreateWithFunctionInvocation(openAiClient, ModelId);
 
         return (chatClient, null);
     }
@@ -217,17 +215,23 @@ internal sealed class SpamScanAgent : IDisposable
             return result;
         }
 
+        const string StatsPattern =
+            @"BATCH_STATS:\s*processed\s*=\s*(?<processed>\d+)\s*,\s*skipped_known\s*=\s*(?<skipped>\d+)\s*,\s*skipped_pending\s*=\s*(?<pending>\d+)\s*,\s*flagged\s*=\s*(?<flagged>\d+)";
+        const System.Text.RegularExpressions.RegexOptions StatsOptions =
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+            System.Text.RegularExpressions.RegexOptions.ExplicitCapture;
         var statsMatch = System.Text.RegularExpressions.Regex.Match(
             responseText,
-            @"BATCH_STATS:\s*processed\s*=\s*(\d+)\s*,\s*skipped_known\s*=\s*(\d+)\s*,\s*skipped_pending\s*=\s*(\d+)\s*,\s*flagged\s*=\s*(\d+)",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            StatsPattern,
+            StatsOptions,
+            TimeSpan.FromSeconds(1));
 
         if (statsMatch.Success)
         {
-            result.Processed = int.Parse(statsMatch.Groups[1].Value, CultureInfo.InvariantCulture);
-            result.SkippedKnown = int.Parse(statsMatch.Groups[2].Value, CultureInfo.InvariantCulture);
-            result.SkippedPending = int.Parse(statsMatch.Groups[3].Value, CultureInfo.InvariantCulture);
-            result.Flagged = int.Parse(statsMatch.Groups[4].Value, CultureInfo.InvariantCulture);
+            result.Processed = int.Parse(statsMatch.Groups["processed"].Value, CultureInfo.InvariantCulture);
+            result.SkippedKnown = int.Parse(statsMatch.Groups["skipped"].Value, CultureInfo.InvariantCulture);
+            result.SkippedPending = int.Parse(statsMatch.Groups["pending"].Value, CultureInfo.InvariantCulture);
+            result.Flagged = int.Parse(statsMatch.Groups["flagged"].Value, CultureInfo.InvariantCulture);
         }
 
         return result;

@@ -113,27 +113,33 @@ internal sealed class SpamFilterAgent : IDisposable
             return;
         }
 
-        var agent = this.CreateAgent(chatClient);
-        DisplayHeader(this.settings);
-
-        var stats = new RunStats();
-        this.consecutiveEmptyBatches = 0;
-
-        while (!cancellationToken.IsCancellationRequested)
+        using (chatClient)
         {
-            stats.Iteration++;
-            AnsiConsole.MarkupLine($"\n[blue]═══ Batch {stats.Iteration} ═══[/]");
+            var agent = this.CreateAgent(chatClient);
+            DisplayHeader(this.settings);
 
-            var batchResult = await this.ProcessInboxBatchAsync(agent, this.settings.BatchSize, cancellationToken).ConfigureAwait(false);
-            var action = await this.HandleBatchResultAsync(batchResult, stats, cancellationToken).ConfigureAwait(false);
+            var stats = new RunStats();
+            this.consecutiveEmptyBatches = 0;
 
-            if (action == BatchAction.Stop)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                break;
-            }
-        }
+                stats.Iteration++;
+                AnsiConsole.MarkupLine($"\n[blue]═══ Batch {stats.Iteration} ═══[/]");
 
-        DisplayFinalSummary(stats);
+                var batchResult = await this
+                    .ProcessInboxBatchAsync(agent, this.settings.BatchSize, cancellationToken)
+                    .ConfigureAwait(false);
+                var action = await this.HandleBatchResultAsync(batchResult, stats, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (action == BatchAction.Stop)
+                {
+                    break;
+                }
+            }
+
+            DisplayFinalSummary(stats);
+        }
     }
 
     /// <inheritdoc/>
@@ -239,35 +245,40 @@ internal sealed class SpamFilterAgent : IDisposable
 
         var statsMatch = System.Text.RegularExpressions.Regex.Match(
             responseText,
-            @"BATCH_STATS:\s*processed\s*=\s*(\d+)\s*,\s*junked\s*=\s*(\d+)\s*,\s*candidates\s*=\s*(\d+)",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            @"BATCH_STATS:\s*processed\s*=\s*(?<processed>\d+)\s*,\s*junked\s*=\s*(?<junked>\d+)\s*,\s*candidates\s*=\s*(?<candidates>\d+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.ExplicitCapture,
+            TimeSpan.FromSeconds(1));
 
         if (statsMatch.Success)
         {
-            result.EmailsProcessed = int.Parse(statsMatch.Groups[1].Value, CultureInfo.InvariantCulture);
-            result.MovedToJunk = int.Parse(statsMatch.Groups[2].Value, CultureInfo.InvariantCulture);
-            result.CandidatesRecorded = int.Parse(statsMatch.Groups[3].Value, CultureInfo.InvariantCulture);
+            result.EmailsProcessed = int.Parse(statsMatch.Groups["processed"].Value, CultureInfo.InvariantCulture);
+            result.MovedToJunk = int.Parse(statsMatch.Groups["junked"].Value, CultureInfo.InvariantCulture);
+            result.CandidatesRecorded = int.Parse(statsMatch.Groups["candidates"].Value, CultureInfo.InvariantCulture);
             return result;
         }
 
         result.EmailsProcessed = ExtractCountFromPattern(
-            upperResponse, @"(\d+)\s*(?:EMAILS?\s*)?PROCESSED|PROCESSED\s*(\d+)");
+            upperResponse, @"(?<num1>\d+)\s*(?:EMAILS?\s*)?PROCESSED|PROCESSED\s*(?<num2>\d+)");
 
         result.MovedToJunk = ExtractCountFromPattern(
-            upperResponse, @"(\d+)\s*(?:EMAILS?\s*)?(?:MOVED\s*TO\s*JUNK|JUNKED)|(?:MOVED|JUNKED)\s*(\d+)");
+            upperResponse, @"(?<num1>\d+)\s*(?:EMAILS?\s*)?(?:MOVED\s*TO\s*JUNK|JUNKED)|(?:MOVED|JUNKED)\s*(?<num2>\d+)");
 
         result.CandidatesRecorded = ExtractCountFromPattern(
-            upperResponse, @"(\d+)\s*(?:SPAM\s*)?CANDIDATES?|FLAGGED\s*(\d+)");
+            upperResponse, @"(?<num1>\d+)\s*(?:SPAM\s*)?CANDIDATES?|FLAGGED\s*(?<num2>\d+)");
 
         return result;
     }
 
     private static int ExtractCountFromPattern(string text, string pattern)
     {
-        var match = System.Text.RegularExpressions.Regex.Match(text, pattern);
+        var match = System.Text.RegularExpressions.Regex.Match(
+            text,
+            pattern,
+            System.Text.RegularExpressions.RegexOptions.ExplicitCapture,
+            TimeSpan.FromSeconds(1));
         if (match.Success)
         {
-            var numStr = match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value;
+            var numStr = match.Groups["num1"].Success ? match.Groups["num1"].Value : match.Groups["num2"].Value;
             if (int.TryParse(numStr, CultureInfo.InvariantCulture, out var num))
             {
                 return num;
@@ -317,12 +328,7 @@ internal sealed class SpamFilterAgent : IDisposable
             new ApiKeyCredential(apiKey),
             new OpenAIClientOptions { Endpoint = new Uri(baseUrlValue) });
 
-        var chatClient = openAiClient
-            .GetChatClient(ModelId)
-            .AsIChatClient()
-            .AsBuilder()
-            .UseFunctionInvocation()
-            .Build();
+        var chatClient = CompositeDisposableChatClient.CreateWithFunctionInvocation(openAiClient, ModelId);
 
         return (chatClient, null);
     }
@@ -501,7 +507,7 @@ internal sealed class SpamFilterAgent : IDisposable
 
         var selections = input
             .Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)
-            .Select(s => int.TryParse(s.Trim(), out var n) ? n : 0)
+            .Select(s => int.TryParse(s.Trim(), CultureInfo.InvariantCulture, out var n) ? n : 0)
             .Where(n => n > 0 && n <= this.currentBatchEvaluations.Count)
             .Distinct()
             .ToList();
@@ -588,7 +594,11 @@ internal sealed class SpamFilterAgent : IDisposable
 
     private async Task ProcessDomainCandidatesAsync(string domain, JsonElement emailsElement)
     {
-        var emails = emailsElement.EnumerateArray().ToList();
+        List<JsonElement> emails;
+        using (var enumerator = emailsElement.EnumerateArray())
+        {
+            emails = [.. enumerator];
+        }
 
         var table = new Table()
             .Border(TableBorder.Rounded)

@@ -27,7 +27,7 @@ internal sealed class SpamStorageService
     private readonly string dataDirectory;
     private readonly string spamDomainsPath;
     private readonly string spamCandidatesPath;
-    private readonly object lockObject = new();
+    private readonly Lock lockObject = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SpamStorageService"/> class.
@@ -76,7 +76,7 @@ internal sealed class SpamStorageService
     public bool IsKnownSpamDomain(string domain)
     {
         var domains = this.GetSpamDomains();
-        return domains.Exists(d => d.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase));
+        return domains.Exists(d => string.Equals(d.Domain, domain, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -92,7 +92,7 @@ internal sealed class SpamStorageService
             var json = File.ReadAllText(this.spamDomainsPath);
             var file = JsonSerializer.Deserialize<SpamDomainsFile>(json, JsonOptions) ?? new SpamDomainsFile();
 
-            if (file.Domains.Any(d => d.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase)))
+            if (file.Domains.Any(d => string.Equals(d.Domain, domain, StringComparison.OrdinalIgnoreCase)))
             {
                 return false;
             }
@@ -135,7 +135,7 @@ internal sealed class SpamStorageService
             var json = File.ReadAllText(this.spamCandidatesPath);
             var file = JsonSerializer.Deserialize<SpamCandidatesFile>(json, JsonOptions) ?? new SpamCandidatesFile();
 
-            if (file.Candidates.Any(c => c.MessageId == candidate.MessageId))
+            if (file.Candidates.Any(c => string.Equals(c.MessageId, candidate.MessageId, StringComparison.Ordinal)))
             {
                 return false;
             }
@@ -158,7 +158,7 @@ internal sealed class SpamStorageService
             var json = File.ReadAllText(this.spamCandidatesPath);
             var file = JsonSerializer.Deserialize<SpamCandidatesFile>(json, JsonOptions) ?? new SpamCandidatesFile();
 
-            var toRemove = file.Candidates.Where(c => c.MessageId == messageId).ToList();
+            var toRemove = file.Candidates.Where(c => string.Equals(c.MessageId, messageId, StringComparison.Ordinal)).ToList();
 
             if (toRemove.Count > 0)
             {
@@ -195,8 +195,8 @@ internal sealed class SpamStorageService
     {
         var candidates = this.GetSpamCandidates();
         return candidates
-            .GroupBy(c => c.SenderDomain.ToUpperInvariant())
-            .ToDictionary(g => g.Key, g => g.ToList());
+            .GroupBy(c => c.SenderDomain.ToUpperInvariant(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
     }
 
     private void EnsureFilesExist()

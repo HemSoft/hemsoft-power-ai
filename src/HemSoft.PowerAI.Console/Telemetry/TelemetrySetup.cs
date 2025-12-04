@@ -100,7 +100,7 @@ internal sealed partial class TelemetrySetup : IDisposable
         ResourceBuilder
             .CreateDefault()
             .AddService(ServiceName, serviceVersion: ServiceVersion)
-            .AddAttributes(new Dictionary<string, object>
+            .AddAttributes(new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["service.instance.id"] = Environment.MachineName,
                 ["deployment.environment"] = "development",

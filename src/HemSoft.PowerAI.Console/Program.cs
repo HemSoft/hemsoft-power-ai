@@ -29,7 +29,7 @@ using Spectre.Console;
 internal static partial class Program
 {
     private const string SourceName = "HemSoft.PowerAI.Console";
-    private const string ModelId = "x-ai/grok-4.1-fast:free";
+    private const string ModelId = "x-ai/grok-4.1-fast";
     private const string OpenRouterBaseUrlEnvVar = "OPENROUTER_BASE_URL";
     private const string CancelledByUserMessage = "[yellow]Operation cancelled by user.[/]";
     private const string CancelledByUserStatus = "Cancelled by user";
@@ -111,12 +111,7 @@ internal static partial class Program
             new ApiKeyCredential(apiKey),
             new OpenAIClientOptions { Endpoint = openRouterBaseUrl });
 
-        var chatClient = openAiClient
-            .GetChatClient(ModelId)
-            .AsIChatClient()
-            .AsBuilder()
-            .UseFunctionInvocation()
-            .Build();
+        using var chatClient = CompositeDisposableChatClient.CreateWithFunctionInvocation(openAiClient, ModelId);
 
         OutlookMailTools.InitializeSpamStorage(settings);
 
@@ -180,7 +175,7 @@ internal static partial class Program
             e.Cancel = true;
             try
             {
-                cts.Cancel();
+                cts.CancelAsync().GetAwaiter().GetResult();
             }
             catch (ObjectDisposedException)
             {
@@ -300,7 +295,7 @@ internal static partial class Program
             e.Cancel = true;
             try
             {
-                cts.Cancel();
+                cts.CancelAsync().GetAwaiter().GetResult();
             }
             catch (ObjectDisposedException)
             {
@@ -350,12 +345,7 @@ internal static partial class Program
             new OpenAIClientOptions { Endpoint = openRouterBaseUrl });
 
         // Create chat client with function invocation support
-        var chatClient = openAiClient
-            .GetChatClient(ModelId)
-            .AsIChatClient()
-            .AsBuilder()
-            .UseFunctionInvocation()
-            .Build();
+        using var chatClient = CompositeDisposableChatClient.CreateWithFunctionInvocation(openAiClient, ModelId);
 
         // Initialize spam storage for mail tool's spam registry modes
         OutlookMailTools.InitializeSpamStorage(settings);
@@ -633,6 +623,18 @@ internal static partial class Program
             LogInvalidOperation(logger, ex);
             ShowError($"Error: {ex.Message}");
         }
+        catch (ClientResultException ex) when (ex.Status == 404)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            LogModelNotFound(logger, ModelId, ex);
+            ShowError($"Model '{ModelId}' not found. Verify the model ID at https://openrouter.ai/models");
+        }
+        catch (ClientResultException ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            LogApiError(logger, ex.Status, ex);
+            ShowError($"API error ({ex.Status}): {ex.Message}");
+        }
     }
 
     private static void ShowError(string message)
@@ -691,6 +693,12 @@ internal static partial class Program
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Invalid operation during chat processing")]
     private static partial void LogInvalidOperation(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Model not found: {ModelId}")]
+    private static partial void LogModelNotFound(ILogger logger, string modelId, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "API error with status {StatusCode}")]
+    private static partial void LogApiError(ILogger logger, int statusCode, Exception ex);
 
     /// <summary>
     /// Tracks cumulative token usage across a chat session.
