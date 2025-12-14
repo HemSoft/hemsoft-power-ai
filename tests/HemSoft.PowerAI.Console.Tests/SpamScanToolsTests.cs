@@ -30,7 +30,7 @@ public class SpamScanToolsTests : IDisposable
     public SpamScanToolsTests()
     {
         this.testDirectory = Path.Combine(Path.GetTempPath(), "SpamScanToolsTests_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this.testDirectory);
+        _ = Directory.CreateDirectory(this.testDirectory);
 
         this.settings = new SpamFilterSettings
         {
@@ -66,8 +66,8 @@ public class SpamScanToolsTests : IDisposable
     public void GetKnownSpamDomainsReturnsDomainAsJsonArray()
     {
         // Arrange
-        this.storageService.AddSpamDomain("spam.com", "Test");
-        this.storageService.AddSpamDomain("junk.com", "Test");
+        _ = this.storageService.AddSpamDomain("spam.com", "Test");
+        _ = this.storageService.AddSpamDomain("junk.com", "Test");
 
         // Act
         var result = this.sut.GetKnownSpamDomains();
@@ -102,8 +102,8 @@ public class SpamScanToolsTests : IDisposable
     public void GetPendingReviewDomainsReturnsDomainAsJsonArray()
     {
         // Arrange
-        this.humanReviewService.AddOrUpdateDomain("pending1.com", "msg1", "a@pending1.com", "Subject 1", "Reason 1");
-        this.humanReviewService.AddOrUpdateDomain("pending2.com", "msg2", "a@pending2.com", "Subject 2", "Reason 2");
+        _ = this.humanReviewService.AddOrUpdateDomain("pending1.com", "msg1", "a@pending1.com", "Subject 1", "Reason 1");
+        _ = this.humanReviewService.AddOrUpdateDomain("pending2.com", "msg2", "a@pending2.com", "Subject 2", "Reason 2");
 
         // Act
         var result = this.sut.GetPendingReviewDomains();
@@ -136,8 +136,8 @@ public class SpamScanToolsTests : IDisposable
     public void GetPendingReviewCountReturnsCorrectCount()
     {
         // Arrange
-        this.humanReviewService.AddOrUpdateDomain("pending1.com", "msg1", "a@pending1.com", "Subject 1", "Reason 1");
-        this.humanReviewService.AddOrUpdateDomain("pending2.com", "msg2", "a@pending2.com", "Subject 2", "Reason 2");
+        _ = this.humanReviewService.AddOrUpdateDomain("pending1.com", "msg1", "a@pending1.com", "Subject 1", "Reason 1");
+        _ = this.humanReviewService.AddOrUpdateDomain("pending2.com", "msg2", "a@pending2.com", "Subject 2", "Reason 2");
 
         // Act
         var count = this.sut.GetPendingReviewCount();
@@ -176,7 +176,7 @@ public class SpamScanToolsTests : IDisposable
     {
         // Arrange
         const string domain = "existing.spam.com";
-        this.humanReviewService.AddOrUpdateDomain(domain, "msg1", "a@existing.spam.com", "Subject 1", "Reason 1");
+        _ = this.humanReviewService.AddOrUpdateDomain(domain, "msg1", "a@existing.spam.com", "Subject 1", "Reason 1");
 
         // Act
         var result = this.sut.FlagDomainForReview(domain, "msg2", "b@existing.spam.com", "Subject 2", "Reason 2");
@@ -217,7 +217,7 @@ public class SpamScanToolsTests : IDisposable
         this.sut.SetResultCallback(r => receivedResult = r);
 
         // Act
-        this.sut.ReportScanResult("test.com", "Test Subject", "Flagged", "Suspicious");
+        _ = this.sut.ReportScanResult("test.com", "Test Subject", "Flagged", "Suspicious");
 
         // Assert
         Assert.NotNull(receivedResult);
@@ -234,10 +234,10 @@ public class SpamScanToolsTests : IDisposable
     public void ReportScanResultHandlesNullCallbackGracefully()
     {
         // Arrange
-        this.sut.SetResultCallback(null);
+        this.sut.SetResultCallback(callback: null);
 
         // Act & Assert - should not throw
-        var result = this.sut.ReportScanResult("test.com", "Test Subject", "Flagged", null);
+        var result = this.sut.ReportScanResult("test.com", "Test Subject", "Flagged", reason: null);
         Assert.Equal("Scan result recorded.", result);
     }
 
@@ -252,7 +252,7 @@ public class SpamScanToolsTests : IDisposable
         this.sut.SetResultCallback(r => receivedResult = r);
 
         // Act
-        this.sut.ReportScanResult(null!, null!, null!, null);
+        _ = this.sut.ReportScanResult(null!, null!, null!, reason: null);
 
         // Assert
         Assert.NotNull(receivedResult);
@@ -274,10 +274,10 @@ public class SpamScanToolsTests : IDisposable
 
         // Act
         this.sut.SetResultCallback(r => result1 = r);
-        this.sut.ReportScanResult("domain1.com", "Subject 1", "Clean", null);
+        _ = this.sut.ReportScanResult("domain1.com", "Subject 1", "Clean", reason: null);
 
         this.sut.SetResultCallback(r => result2 = r);
-        this.sut.ReportScanResult("domain2.com", "Subject 2", "Flagged", null);
+        _ = this.sut.ReportScanResult("domain2.com", "Subject 2", "Flagged", reason: null);
 
         // Assert
         Assert.NotNull(result1);
@@ -322,7 +322,7 @@ public class SpamScanToolsTests : IDisposable
 
         // Arrange - ensure env var is not set
         var originalValue = Environment.GetEnvironmentVariable("GRAPH_CLIENT_ID");
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", null);
+        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null);
 
         try
         {
@@ -356,7 +356,7 @@ public class SpamScanToolsTests : IDisposable
         // Arrange - ensure env var is not set and create a FRESH instance
         // to avoid test pollution from parallel test execution
         var originalValue = Environment.GetEnvironmentVariable("GRAPH_CLIENT_ID");
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", null);
+        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null);
 
         try
         {
@@ -671,9 +671,9 @@ public class SpamScanToolsTests : IDisposable
         const string domain = "repeated.com";
 
         // Act
-        this.sut.FlagDomainForReview(domain, "msg1", "a@repeated.com", "Subject 1", "Reason 1");
-        this.sut.FlagDomainForReview(domain, "msg2", "b@repeated.com", "Subject 2", "Reason 2");
-        this.sut.FlagDomainForReview(domain, "msg3", "c@repeated.com", "Subject 3", "Reason 3");
+        _ = this.sut.FlagDomainForReview(domain, "msg1", "a@repeated.com", "Subject 1", "Reason 1");
+        _ = this.sut.FlagDomainForReview(domain, "msg2", "b@repeated.com", "Subject 2", "Reason 2");
+        _ = this.sut.FlagDomainForReview(domain, "msg3", "c@repeated.com", "Subject 3", "Reason 3");
 
         // Assert - should still only be one domain in the review queue
         Assert.Equal(1, this.humanReviewService.GetPendingCount());
@@ -690,7 +690,7 @@ public class SpamScanToolsTests : IDisposable
         this.sut.SetResultCallback(r => receivedResult = r);
 
         // Act
-        this.sut.ReportScanResult(string.Empty, string.Empty, string.Empty, string.Empty);
+        _ = this.sut.ReportScanResult(string.Empty, string.Empty, string.Empty, string.Empty);
 
         // Assert
         Assert.NotNull(receivedResult);
@@ -729,9 +729,9 @@ public class SpamScanToolsTests : IDisposable
     public void GetKnownSpamDomainsReturnsValidJsonForMultipleDomains()
     {
         // Arrange
-        this.storageService.AddSpamDomain("domain1.com", "Test 1");
-        this.storageService.AddSpamDomain("domain2.com", "Test 2");
-        this.storageService.AddSpamDomain("domain3.com", "Test 3");
+        _ = this.storageService.AddSpamDomain("domain1.com", "Test 1");
+        _ = this.storageService.AddSpamDomain("domain2.com", "Test 2");
+        _ = this.storageService.AddSpamDomain("domain3.com", "Test 3");
 
         // Act
         var result = this.sut.GetKnownSpamDomains();
@@ -749,9 +749,9 @@ public class SpamScanToolsTests : IDisposable
     public void GetPendingReviewDomainsReturnsValidJsonForMultipleDomains()
     {
         // Arrange
-        this.humanReviewService.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
-        this.humanReviewService.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
-        this.humanReviewService.AddOrUpdateDomain("domain3.com", "msg3", "a@domain3.com", "Subject 3", "Reason 3");
+        _ = this.humanReviewService.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
+        _ = this.humanReviewService.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
+        _ = this.humanReviewService.AddOrUpdateDomain("domain3.com", "msg3", "a@domain3.com", "Subject 3", "Reason 3");
 
         // Act
         var result = this.sut.GetPendingReviewDomains();
@@ -791,7 +791,7 @@ public class SpamScanToolsTests : IDisposable
         var longString = new string('x', 10000);
 
         // Act
-        this.sut.ReportScanResult(longString, longString, longString, longString);
+        _ = this.sut.ReportScanResult(longString, longString, longString, longString);
 
         // Assert
         Assert.NotNull(receivedResult);
@@ -885,14 +885,14 @@ public class SpamScanToolsTests : IDisposable
     public void GetPendingReviewCountUpdatesCorrectlyAfterAddsAndRemoves()
     {
         // Arrange & Act - Add domains
-        this.humanReviewService.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
-        this.humanReviewService.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
+        _ = this.humanReviewService.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
+        _ = this.humanReviewService.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
 
         // Assert after adds
         Assert.Equal(2, this.sut.GetPendingReviewCount());
 
         // Act - Remove one
-        this.humanReviewService.RemoveDomain("domain1.com");
+        _ = this.humanReviewService.RemoveDomain("domain1.com");
 
         // Assert after remove
         Assert.Equal(1, this.sut.GetPendingReviewCount());
@@ -916,15 +916,15 @@ public class SpamScanToolsTests : IDisposable
 
         // Act - Set callback
         this.sut.SetResultCallback(r => result1 = r);
-        this.sut.ReportScanResult("domain1.com", "Subject 1", "Flagged", null);
+        _ = this.sut.ReportScanResult("domain1.com", "Subject 1", "Flagged", reason: null);
 
         // Act - Set to null
-        this.sut.SetResultCallback(null);
-        this.sut.ReportScanResult("domain2.com", "Subject 2", "Clean", null);
+        this.sut.SetResultCallback(callback: null);
+        _ = this.sut.ReportScanResult("domain2.com", "Subject 2", "Clean", reason: null);
 
         // Act - Set new callback
         this.sut.SetResultCallback(r => result2 = r);
-        this.sut.ReportScanResult("domain3.com", "Subject 3", "Skipped", null);
+        _ = this.sut.ReportScanResult("domain3.com", "Subject 3", "Skipped", reason: null);
 
         // Assert
         Assert.NotNull(result1);
@@ -1018,7 +1018,7 @@ public class SpamScanToolsTests : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        this.Dispose(true);
+        this.Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -1041,7 +1041,7 @@ public class SpamScanToolsTests : IDisposable
             {
                 if (Directory.Exists(this.testDirectory))
                 {
-                    Directory.Delete(this.testDirectory, true);
+                    Directory.Delete(this.testDirectory, recursive: true);
                 }
             }
             catch (IOException)

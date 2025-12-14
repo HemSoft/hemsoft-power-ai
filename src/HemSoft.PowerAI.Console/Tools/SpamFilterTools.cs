@@ -10,6 +10,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 using HemSoft.PowerAI.Console.Models;
 using HemSoft.PowerAI.Console.Services;
@@ -27,16 +28,20 @@ internal delegate void EmailEvaluatedCallback(EmailEvaluation evaluation);
 /// <summary>
 /// Provides spam filtering tools for the AI agent.
 /// </summary>
+/// <param name="storageService">The spam storage service for persisting spam domain data.</param>
+/// <param name="timeProvider">The time provider to use. Defaults to system time.</param>
 [ExcludeFromCodeCoverage(Justification = "Tools require Graph API authentication")]
-internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisposable
+internal sealed partial class SpamFilterTools(SpamStorageService storageService, TimeProvider? timeProvider = null) : IDisposable
 {
     private const string FolderInbox = "inbox";
     private const string FolderJunk = "junkemail";
 
     private static readonly ActivitySource GraphApiActivitySource = new("HemSoft.PowerAI.GraphApi", "1.0.0");
 
+    private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
     private readonly HashSet<string> processedMessageIds = new(StringComparer.Ordinal);
     private EmailEvaluatedCallback? onEmailEvaluated;
+    private int skipCount;
     private bool disposed;
 
     /// <summary>
@@ -53,7 +58,7 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
     public string GetKnownSpamDomains()
     {
         var domains = storageService.GetSpamDomains();
-        AnsiConsole.MarkupLine($"[dim]  → Loaded {domains.Count} known spam domains[/]");
+        AnsiConsole.MarkupLine(CultureInfo.InvariantCulture, $"[dim]  → Loaded {domains.Count} known spam domains[/]");
         return JsonSerializer.Serialize(domains.Select(d => d.Domain));
     }
 
@@ -111,40 +116,42 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
     public async Task<string> GetInboxEmailsAsync(int batchSize = 10)
     {
         using var activity = GraphApiActivitySource.StartActivity("GetInboxEmails");
-        activity?.SetTag("batch.size", batchSize);
+        _ = activity?.SetTag("batch.size", batchSize);
 
         var client = SharedGraphClient.GetClient();
         if (client is null)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
             return $"Error: Set {SharedGraphClient.ClientIdEnvVar} environment variable.";
         }
 
         try
         {
-            // Fetch more than needed to account for already-processed emails
-            var fetchSize = Math.Min(batchSize * 3, 50);
             var messages = await client.Me.MailFolders[FolderInbox].Messages.GetAsync(config =>
             {
                 config.Headers.Add("Prefer", "IdType=\"ImmutableId\"");
-                config.QueryParameters.Top = fetchSize;
+                config.QueryParameters.Top = batchSize;
+                config.QueryParameters.Skip = this.skipCount;
                 config.QueryParameters.Select = ["id", "subject", "from", "receivedDateTime", "isRead"];
                 config.QueryParameters.Orderby = ["receivedDateTime desc"];
             }).ConfigureAwait(false);
 
             if (messages?.Value is not { Count: > 0 })
             {
-                activity?.SetTag("emails.fetched", 0);
+                _ = activity?.SetTag("emails.fetched", 0);
                 return "[]";
             }
 
-            // Filter out already-processed emails and take only the requested batch size
+            // Filter out any we might have seen (defensive) and track new ones
             var unprocessedEmails = messages.Value
                 .Where(m => m.Id is not null && !this.processedMessageIds.Contains(m.Id))
-                .Take(batchSize)
                 .ToList();
 
-            activity?.SetTag("emails.fetched", unprocessedEmails.Count);
+            // Advance skip for next batch
+            this.skipCount += messages.Value.Count;
+
+            _ = activity?.SetTag("emails.fetched", unprocessedEmails.Count);
+            _ = activity?.SetTag("skip.count", this.skipCount);
 
             if (unprocessedEmails.Count == 0)
             {
@@ -157,7 +164,7 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
             // Mark these as processed so we don't fetch them again
             foreach (var email in unprocessedEmails)
             {
-                this.processedMessageIds.Add(email.Id!);
+                _ = this.processedMessageIds.Add(email.Id!);
             }
 
             var result = unprocessedEmails.Select(m =>
@@ -179,7 +186,7 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
         }
         catch (ODataError ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
             return $"Error fetching emails: {ex.Error?.Message ?? ex.Message}";
         }
     }
@@ -195,15 +202,15 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
     public async Task<string> ReadEmailAsync(string messageId)
     {
         ObjectDisposedException.ThrowIf(this.disposed, this);
-        AnsiConsole.MarkupLine($"[dim]  → Reading email content...[/]");
+        AnsiConsole.MarkupLine("[dim]  → Reading email content...[/]");
 
         using var activity = GraphApiActivitySource.StartActivity("ReadEmail");
-        activity?.SetTag("message.id", messageId);
+        _ = activity?.SetTag("message.id", messageId);
 
         var client = SharedGraphClient.GetClient();
         if (client is null)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
             return $"Error: Set {SharedGraphClient.ClientIdEnvVar} environment variable.";
         }
 
@@ -215,12 +222,12 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
 
             if (message is null)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, "Message not found");
+                _ = activity?.SetStatus(ActivityStatusCode.Error, "Message not found");
                 return "Message not found";
             }
 
             var senderEmail = message.From?.EmailAddress?.Address ?? "unknown";
-            activity?.SetTag("sender.domain", ExtractDomain(senderEmail));
+            _ = activity?.SetTag("sender.domain", ExtractDomain(senderEmail));
 
             var result = new
             {
@@ -237,7 +244,7 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
         }
         catch (ODataError ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
             return $"Error reading email: {ex.Error?.Message ?? ex.Message}";
         }
     }
@@ -253,40 +260,40 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
     public async Task<string> MoveToJunkAsync(string messageId)
     {
         using var activity = GraphApiActivitySource.StartActivity("MoveToJunk");
-        activity?.SetTag("message.id", messageId);
+        _ = activity?.SetTag("message.id", messageId);
 
         var client = SharedGraphClient.GetClient();
         if (client is null)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
             return $"Error: Set {SharedGraphClient.ClientIdEnvVar} environment variable.";
         }
 
         if (string.IsNullOrEmpty(messageId))
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing message ID");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing message ID");
             return "Error: messageId is required.";
         }
 
         try
         {
             // Use MailFolders[inbox].Messages to match how we fetched the IDs in GetInboxEmailsAsync
-            await client.Me.MailFolders[FolderInbox].Messages[messageId].Move.PostAsync(
+            _ = await client.Me.MailFolders[FolderInbox].Messages[messageId].Move.PostAsync(
                 new Microsoft.Graph.Me.MailFolders.Item.Messages.Item.Move.MovePostRequestBody
                 {
                     DestinationId = FolderJunk,
                 }).ConfigureAwait(false);
 
             // Track as processed so we don't see it again
-            this.processedMessageIds.Add(messageId);
+            _ = this.processedMessageIds.Add(messageId);
 
-            AnsiConsole.MarkupLine($"[red]  → Moved to junk[/]");
-            activity?.SetTag("move.success", true);
+            AnsiConsole.MarkupLine("[red]  → Moved to junk[/]");
+            _ = activity?.SetTag("move.success", value: true);
             return "Successfully moved message to junk folder.";
         }
         catch (ODataError ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
             return $"Error moving to junk: {ex.Error?.Message ?? ex.Message}";
         }
     }
@@ -318,7 +325,8 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
             Subject = subject,
             SpamReason = spamReason,
             ConfidenceScore = Math.Clamp(confidenceScore, 0.0, 1.0),
-            IdentifiedAt = DateTime.UtcNow,
+            ReceivedAt = this.timeProvider.GetUtcNow(),
+            IdentifiedAt = this.timeProvider.GetUtcNow(),
         };
 
         var added = storageService.AddSpamCandidate(candidate);
@@ -379,17 +387,17 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
     public async Task<string> ProcessApprovedSpamDomainAsync(string domain)
     {
         using var activity = GraphApiActivitySource.StartActivity("ProcessApprovedSpamDomain");
-        activity?.SetTag("domain", domain);
+        _ = activity?.SetTag("domain", domain);
 
         // Add to spam list
-        storageService.AddSpamDomain(domain, "Approved by user");
+        _ = storageService.AddSpamDomain(domain, "Approved by user");
 
         // Get all candidates from this domain
         var candidates = storageService.GetSpamCandidates()
             .Where(c => c.SenderDomain.Equals(domain, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        activity?.SetTag("candidates.count", candidates.Count);
+        _ = activity?.SetTag("candidates.count", candidates.Count);
 
         var movedCount = 0;
         var errors = new List<string>();
@@ -399,7 +407,7 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
             var result = await this.MoveToJunkAsync(candidate.MessageId).ConfigureAwait(false);
             if (result.StartsWith("Successfully", StringComparison.Ordinal))
             {
-                storageService.RemoveSpamCandidate(candidate.MessageId);
+                _ = storageService.RemoveSpamCandidate(candidate.MessageId);
                 movedCount++;
             }
             else
@@ -408,16 +416,16 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
             }
         }
 
-        activity?.SetTag("emails.moved", movedCount);
-        activity?.SetTag("errors.count", errors.Count);
+        _ = activity?.SetTag("emails.moved", movedCount);
+        _ = activity?.SetTag("errors.count", errors.Count);
 
         var sb = new StringBuilder();
-        sb.Append(CultureInfo.InvariantCulture, $"Processed domain {domain}: ");
-        sb.Append(CultureInfo.InvariantCulture, $"Added to spam list, moved {movedCount} emails to junk.");
+        _ = sb.Append(CultureInfo.InvariantCulture, $"Processed domain {domain}: ");
+        _ = sb.Append(CultureInfo.InvariantCulture, $"Added to spam list, moved {movedCount} emails to junk.");
 
         if (errors.Count > 0)
         {
-            sb.Append(CultureInfo.InvariantCulture, $" Errors: {errors.Count}");
+            _ = sb.Append(CultureInfo.InvariantCulture, $" Errors: {errors.Count}");
         }
 
         return sb.ToString();
@@ -462,19 +470,15 @@ internal sealed class SpamFilterTools(SpamStorageService storageService) : IDisp
         }
 
         // Strip HTML tags for a cleaner preview
-        var text = System.Text.RegularExpressions.Regex.Replace(
-            body,
-            "<[^>]+>",
-            " ",
-            System.Text.RegularExpressions.RegexOptions.None,
-            TimeSpan.FromSeconds(1));
-        text = System.Text.RegularExpressions.Regex.Replace(
-            text,
-            @"\s+",
-            " ",
-            System.Text.RegularExpressions.RegexOptions.None,
-            TimeSpan.FromSeconds(1)).Trim();
+        var text = HtmlTagRegex().Replace(body, " ");
+        text = WhitespaceRegex().Replace(text, " ").Trim();
 
         return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }
+
+    [GeneratedRegex(@"<[^>]+>", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex HtmlTagRegex();
+
+    [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex WhitespaceRegex();
 }

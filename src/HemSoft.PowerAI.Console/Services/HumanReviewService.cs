@@ -23,16 +23,19 @@ internal sealed class HumanReviewService
     };
 
     private readonly string humanReviewPath;
+    private readonly TimeProvider timeProvider;
     private readonly Lock lockObject = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HumanReviewService"/> class.
     /// </summary>
     /// <param name="settings">The spam filter settings.</param>
-    public HumanReviewService(SpamFilterSettings settings)
+    /// <param name="timeProvider">The time provider to use. Defaults to system time.</param>
+    public HumanReviewService(SpamFilterSettings settings, TimeProvider? timeProvider = null)
     {
         var baseDir = AppContext.BaseDirectory;
         this.humanReviewPath = Path.Combine(baseDir, settings.HumanReviewFilePath);
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         this.EnsureFileExists();
     }
 
@@ -85,7 +88,7 @@ internal sealed class HumanReviewService
                 d.Domain.Equals(normalizedDomain, StringComparison.OrdinalIgnoreCase));
 
             var isNew = existing is null;
-            var now = DateTime.UtcNow;
+            var now = this.timeProvider.GetUtcNow();
 
             if (isNew)
             {
@@ -94,6 +97,7 @@ internal sealed class HumanReviewService
                     Domain = normalizedDomain,
                     EmailCount = 0,
                     FirstSeen = now,
+                    LastSeen = now,
                 };
                 file.Domains.Add(existing);
             }
@@ -137,7 +141,7 @@ internal sealed class HumanReviewService
 
             if (toRemove is not null)
             {
-                file.Domains.Remove(toRemove);
+                _ = file.Domains.Remove(toRemove);
                 File.WriteAllText(this.humanReviewPath, JsonSerializer.Serialize(file, JsonOptions));
             }
 
@@ -203,7 +207,7 @@ internal sealed class HumanReviewService
         var dir = Path.GetDirectoryName(this.humanReviewPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
         {
-            Directory.CreateDirectory(dir);
+            _ = Directory.CreateDirectory(dir);
         }
 
         if (!File.Exists(this.humanReviewPath))

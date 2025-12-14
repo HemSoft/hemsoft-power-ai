@@ -29,10 +29,10 @@ internal sealed class HumanReviewDomain
     /// <summary>
     /// Gets or sets when this domain was first seen.
     /// </summary>
-    public DateTime FirstSeen { get; set; } = DateTime.UtcNow;
+    public required DateTimeOffset FirstSeen { get; set; }
 
     /// <summary>
     /// Gets or sets when this domain was last seen.
     /// </summary>
-    public DateTime LastSeen { get; set; } = DateTime.UtcNow;
+    public required DateTimeOffset LastSeen { get; set; }
 }

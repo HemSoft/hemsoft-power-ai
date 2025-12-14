@@ -24,7 +24,7 @@ public class SpamCleanupAgentTests : IDisposable
     public SpamCleanupAgentTests()
     {
         this.testDirectory = Path.Combine(Path.GetTempPath(), "SpamCleanupAgentTests_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this.testDirectory);
+        _ = Directory.CreateDirectory(this.testDirectory);
 
         this.settings = new SpamFilterSettings
         {
@@ -160,14 +160,14 @@ public class SpamCleanupAgentTests : IDisposable
         Assert.NotNull(stats);
 
         // Act - Set large values
-        statsType.GetProperty("DomainsProcessed")?.SetValue(stats, 100000);
-        statsType.GetProperty("TotalEmailsMoved")?.SetValue(stats, 5000000);
-        statsType.GetProperty("TotalEmailsDeleted")?.SetValue(stats, 50000);
+        statsType.GetProperty("DomainsProcessed")?.SetValue(stats, 100_000);
+        statsType.GetProperty("TotalEmailsMoved")?.SetValue(stats, 5_000_000);
+        statsType.GetProperty("TotalEmailsDeleted")?.SetValue(stats, 50_000);
 
         // Assert
-        Assert.Equal(100000, statsType.GetProperty("DomainsProcessed")?.GetValue(stats));
-        Assert.Equal(5000000, statsType.GetProperty("TotalEmailsMoved")?.GetValue(stats));
-        Assert.Equal(50000, statsType.GetProperty("TotalEmailsDeleted")?.GetValue(stats));
+        Assert.Equal(100_000, statsType.GetProperty("DomainsProcessed")?.GetValue(stats));
+        Assert.Equal(5_000_000, statsType.GetProperty("TotalEmailsMoved")?.GetValue(stats));
+        Assert.Equal(50_000, statsType.GetProperty("TotalEmailsDeleted")?.GetValue(stats));
     }
 
     /// <summary>
@@ -282,7 +282,7 @@ public class SpamCleanupAgentTests : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        this.Dispose(true);
+        this.Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -303,7 +303,7 @@ public class SpamCleanupAgentTests : IDisposable
             {
                 if (Directory.Exists(this.testDirectory))
                 {
-                    Directory.Delete(this.testDirectory, true);
+                    Directory.Delete(this.testDirectory, recursive: true);
                 }
             }
             catch (IOException)

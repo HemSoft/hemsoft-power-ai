@@ -23,23 +23,27 @@ internal sealed class FileTraceExporter : BaseExporter<Activity>
 
     private readonly string traceDirectory;
     private readonly int retentionDays;
+    private readonly TimeProvider timeProvider;
     private readonly Lock fileLock = new();
     private string currentFilePath;
-    private DateTime currentFileDate;
+    private DateTimeOffset currentFileDate;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FileTraceExporter"/> class.
     /// </summary>
     /// <param name="traceDirectory">Directory to write trace files to.</param>
     /// <param name="retentionDays">Number of days to retain trace files.</param>
-    public FileTraceExporter(string traceDirectory, int retentionDays = 7)
+    /// <param name="timeProvider">The time provider to use. Defaults to system time.</param>
+    public FileTraceExporter(string traceDirectory, int retentionDays = 7, TimeProvider? timeProvider = null)
     {
         this.traceDirectory = traceDirectory;
         this.retentionDays = retentionDays;
-        this.currentFileDate = DateTime.UtcNow.Date;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
+        var utcNow = this.timeProvider.GetUtcNow();
+        this.currentFileDate = new DateTimeOffset(utcNow.Date, TimeSpan.Zero);
         this.currentFilePath = this.GetTraceFilePath(this.currentFileDate);
 
-        Directory.CreateDirectory(traceDirectory);
+        _ = Directory.CreateDirectory(traceDirectory);
         this.CleanupOldFiles();
     }
 
@@ -88,7 +92,7 @@ internal sealed class FileTraceExporter : BaseExporter<Activity>
         {
             Name = e.Name,
             Timestamp = e.Timestamp.ToString("o", CultureInfo.InvariantCulture),
-            Attributes = e.Tags.ToDictionary(t => t.Key, t => t.Value as object, StringComparer.Ordinal),
+            Attributes = e.Tags.ToDictionary(t => t.Key, t => t.Value, StringComparer.Ordinal),
         }).ToList();
 
         return new TraceRecord
@@ -109,12 +113,15 @@ internal sealed class FileTraceExporter : BaseExporter<Activity>
         };
     }
 
-    private string GetTraceFilePath(DateTime date) =>
-        Path.Combine(this.traceDirectory, $"traces-{date:yyyy-MM-dd}.jsonl");
+    private string GetTraceFilePath(DateTimeOffset date) =>
+        Path.Combine(
+            this.traceDirectory,
+            string.Create(CultureInfo.InvariantCulture, $"traces-{date:yyyy-MM-dd}.jsonl"));
 
     private void RotateFileIfNeeded()
     {
-        var today = DateTime.UtcNow.Date;
+        var utcNow = this.timeProvider.GetUtcNow();
+        var today = new DateTimeOffset(utcNow.Date, TimeSpan.Zero);
         if (today != this.currentFileDate)
         {
             this.currentFileDate = today;
@@ -127,10 +134,8 @@ internal sealed class FileTraceExporter : BaseExporter<Activity>
     {
         try
         {
-            var cutoffDate = DateTime.UtcNow.Date.AddDays(-this.retentionDays);
-            var files = Directory.GetFiles(this.traceDirectory, "traces-*.jsonl");
-
-            foreach (var file in files)
+            var cutoffDate = this.timeProvider.GetUtcNow().Date.AddDays(-this.retentionDays);
+            foreach (var file in Directory.GetFiles(this.traceDirectory, "traces-*.jsonl"))
             {
                 var fileName = Path.GetFileNameWithoutExtension(file);
                 if (fileName.StartsWith("traces-", StringComparison.Ordinal) &&

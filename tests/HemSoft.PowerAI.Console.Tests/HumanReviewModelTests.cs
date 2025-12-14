@@ -41,13 +41,18 @@ public class HumanReviewModelTests
     {
         // Arrange
         var file = new HumanReviewFile();
-        var domain = new HumanReviewDomain { Domain = "TEST.COM" };
+        var domain = new HumanReviewDomain
+        {
+            Domain = "TEST.COM",
+            FirstSeen = DateTimeOffset.UtcNow,
+            LastSeen = DateTimeOffset.UtcNow,
+        };
 
         // Act
         file.Domains = [domain];
 
         // Assert
-        Assert.Single(file.Domains);
+        _ = Assert.Single(file.Domains);
         Assert.Equal("TEST.COM", file.Domains[0].Domain);
     }
 
@@ -66,8 +71,8 @@ public class HumanReviewModelTests
                 {
                     Domain = "SPAM.COM",
                     EmailCount = 5,
-                    FirstSeen = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-                    LastSeen = new DateTime(2025, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+                    FirstSeen = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                    LastSeen = new DateTimeOffset(2025, 1, 2, 0, 0, 0, TimeSpan.Zero),
                     Samples =
                     [
                         new HumanReviewSample
@@ -88,7 +93,7 @@ public class HumanReviewModelTests
 
         // Assert
         Assert.NotNull(deserialized);
-        Assert.Single(deserialized.Domains);
+        _ = Assert.Single(deserialized.Domains);
         Assert.Equal("SPAM.COM", deserialized.Domains[0].Domain);
         Assert.Equal(5, deserialized.Domains[0].EmailCount);
     }
@@ -99,16 +104,24 @@ public class HumanReviewModelTests
     [Fact]
     public void HumanReviewDomainInitializesWithDefaultValues()
     {
+        // Arrange
+        var now = DateTimeOffset.UtcNow;
+
         // Act
-        var domain = new HumanReviewDomain { Domain = "TEST.COM" };
+        var domain = new HumanReviewDomain
+        {
+            Domain = "TEST.COM",
+            FirstSeen = now,
+            LastSeen = now,
+        };
 
         // Assert
         Assert.Equal("TEST.COM", domain.Domain);
         Assert.Equal(0, domain.EmailCount);
         Assert.NotNull(domain.Samples);
         Assert.Empty(domain.Samples);
-        Assert.True(domain.FirstSeen <= DateTime.UtcNow);
-        Assert.True(domain.LastSeen <= DateTime.UtcNow);
+        Assert.True(domain.FirstSeen <= DateTimeOffset.UtcNow);
+        Assert.True(domain.LastSeen <= DateTimeOffset.UtcNow);
     }
 
     /// <summary>
@@ -118,8 +131,8 @@ public class HumanReviewModelTests
     public void HumanReviewDomainPropertiesCanBeSet()
     {
         // Arrange
-        var firstSeen = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var lastSeen = new DateTime(2025, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+        var firstSeen = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var lastSeen = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero);
 
         // Act
         var domain = new HumanReviewDomain
@@ -144,7 +157,7 @@ public class HumanReviewModelTests
         Assert.Equal(10, domain.EmailCount);
         Assert.Equal(firstSeen, domain.FirstSeen);
         Assert.Equal(lastSeen, domain.LastSeen);
-        Assert.Single(domain.Samples);
+        _ = Assert.Single(domain.Samples);
     }
 
     /// <summary>
@@ -154,7 +167,12 @@ public class HumanReviewModelTests
     public void HumanReviewDomainSamplesSupportsAddOperations()
     {
         // Arrange
-        var domain = new HumanReviewDomain { Domain = "TEST.COM" };
+        var domain = new HumanReviewDomain
+        {
+            Domain = "TEST.COM",
+            FirstSeen = DateTimeOffset.UtcNow,
+            LastSeen = DateTimeOffset.UtcNow,
+        };
 
         // Act
         domain.Samples.Add(new HumanReviewSample
@@ -276,8 +294,8 @@ public class HumanReviewModelTests
         {
             Domain = "TEST.COM",
             EmailCount = 3,
-            FirstSeen = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc),
-            LastSeen = new DateTime(2025, 1, 5, 12, 0, 0, DateTimeKind.Utc),
+            FirstSeen = new DateTimeOffset(2025, 1, 1, 12, 0, 0, TimeSpan.Zero),
+            LastSeen = new DateTimeOffset(2025, 1, 5, 12, 0, 0, TimeSpan.Zero),
             Samples =
             [
                 new HumanReviewSample
@@ -331,7 +349,12 @@ public class HumanReviewModelTests
     public void HumanReviewDomainSamplesCanBeReplaced()
     {
         // Arrange
-        var domain = new HumanReviewDomain { Domain = "TEST.COM" };
+        var domain = new HumanReviewDomain
+        {
+            Domain = "TEST.COM",
+            FirstSeen = DateTimeOffset.UtcNow,
+            LastSeen = DateTimeOffset.UtcNow,
+        };
         domain.Samples.Add(new HumanReviewSample
         {
             MessageId = "old",
@@ -351,7 +374,7 @@ public class HumanReviewModelTests
         ];
 
         // Assert
-        Assert.Single(domain.Samples);
+        _ = Assert.Single(domain.Samples);
         Assert.Equal("new", domain.Samples[0].MessageId);
     }
 }

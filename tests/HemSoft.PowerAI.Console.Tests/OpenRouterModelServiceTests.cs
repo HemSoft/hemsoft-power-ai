@@ -24,18 +24,10 @@ public sealed class OpenRouterModelServiceTests : IDisposable
         this.originalEnvValue = Environment.GetEnvironmentVariable(TestEnvVar);
 
     /// <inheritdoc/>
-    public void Dispose()
-    {
+    public void Dispose() =>
+
         // Restore original env var
-        if (this.originalEnvValue is null)
-        {
-            Environment.SetEnvironmentVariable(TestEnvVar, null);
-        }
-        else
-        {
-            Environment.SetEnvironmentVariable(TestEnvVar, this.originalEnvValue);
-        }
-    }
+        Environment.SetEnvironmentVariable(TestEnvVar, this.originalEnvValue);
 
     /// <summary>
     /// Verifies Info is null before fetching.

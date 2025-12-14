@@ -7,13 +7,17 @@ namespace HemSoft.PowerAI.Console;
 using System.ClientModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
 using HemSoft.PowerAI.Console.Agents;
 using HemSoft.PowerAI.Console.Configuration;
+using HemSoft.PowerAI.Console.Extensions;
+using HemSoft.PowerAI.Console.Hosting;
 using HemSoft.PowerAI.Console.Services;
 using HemSoft.PowerAI.Console.Telemetry;
 using HemSoft.PowerAI.Console.Tools;
 
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -31,27 +35,31 @@ internal static partial class Program
     private const string SourceName = "HemSoft.PowerAI.Console";
     private const string ModelId = "x-ai/grok-4.1-fast";
     private const string OpenRouterBaseUrlEnvVar = "OPENROUTER_BASE_URL";
+    private const string ResearchAgentUrlEnvVar = "RESEARCH_AGENT_URL";
     private const string CancelledByUserMessage = "[yellow]Operation cancelled by user.[/]";
     private const string CancelledByUserStatus = "Cancelled by user";
     private const string ReturnedToChatModeMessage = "\n[dim]Returned to chat mode.[/]\n";
 
     private enum ChatCommand
     {
-        Empty,
-        Exit,
-        Clear,
-        Usage,
-        Spam,
-        SpamScan,
-        SpamReview,
-        SpamCleanup,
-        Message,
+        Empty = 0,
+        Exit = 1,
+        Clear = 2,
+        Usage = 3,
+        Spam = 4,
+        SpamScan = 5,
+        SpamReview = 6,
+        SpamCleanup = 7,
+        Coordinate = 8,
+        CoordinateDistributed = 9,
+        HostResearch = 10,
+        Message = 11,
     }
 
     /// <summary>
     /// Application entry point.
     /// </summary>
-    /// <param name="args">Command line arguments. Use 'spam' to run spam filter agent, or pass a prompt to execute and exit.</param>
+    /// <param name="args">Command line arguments. Use 'spam', 'host-research', or 'distributed' to run specific agents.</param>
     /// <returns>Exit code (0 for success, 1 for configuration error).</returns>
     public static async Task<int> Main(string[] args)
     {
@@ -65,26 +73,33 @@ internal static partial class Program
             .AddJsonFile("appsettings.json", optional: true)
             .Build();
 
-        var settings = new SpamFilterSettings();
-        configuration.GetSection(SpamFilterSettings.SectionName).Bind(settings);
+        var spamSettings = new SpamFilterSettings();
+        configuration.GetSection(SpamFilterSettings.SectionName).Bind(spamSettings);
+
+        var a2aSettings = new Configuration.A2ASettings();
+        configuration.GetSection(Configuration.A2ASettings.SectionName).Bind(a2aSettings);
 
         if (args.Length == 0)
         {
-            return await RunInteractiveChatAsync(settings, telemetry).ConfigureAwait(false);
+            return await RunInteractiveChatAsync(spamSettings, a2aSettings, telemetry).ConfigureAwait(false);
         }
 
         // Check for special commands
-        if (args[0].Equals("spam", StringComparison.OrdinalIgnoreCase))
+        var firstArg = args[0].ToUpperInvariant();
+        return firstArg switch
         {
-            return await RunSpamFilterAgentAsync(settings, telemetry).ConfigureAwait(false);
-        }
-
-        // Treat all arguments as a prompt to execute once and exit
-        var prompt = string.Join(" ", args);
-        return await RunSinglePromptAsync(prompt, settings, telemetry).ConfigureAwait(false);
+            "SPAM" => await RunSpamFilterAgentAsync(spamSettings, telemetry).ConfigureAwait(false),
+            "HOST-RESEARCH" => await RunHostResearchAgentAsync(a2aSettings, telemetry).ConfigureAwait(false),
+            "DISTRIBUTED" => await RunDistributedCoordinatorAsync(a2aSettings, telemetry).ConfigureAwait(false),
+            "COORDINATE" => await RunCoordinatorAgentAsync(
+                a2aSettings,
+                telemetry,
+                args.Length > 1 ? string.Join(' ', args.Skip(1)) : null).ConfigureAwait(false),
+            _ => await RunSinglePromptAsync(string.Join(' ', args), spamSettings, telemetry).ConfigureAwait(false),
+        };
     }
 
-    private static async Task<int> RunSinglePromptAsync(string prompt, SpamFilterSettings settings, TelemetrySetup telemetry)
+    private static async Task<int> RunSinglePromptAsync(string prompt, SpamFilterSettings spamSettings, TelemetrySetup telemetry)
     {
         using var activity = telemetry.ActivitySource.StartActivity("RunSinglePrompt");
 
@@ -92,7 +107,7 @@ internal static partial class Program
         if (string.IsNullOrEmpty(openRouterBaseUrlValue))
         {
             AnsiConsole.MarkupLine($"[red]Missing {OpenRouterBaseUrlEnvVar} environment variable.[/]");
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_BASE_URL");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_BASE_URL");
             return 1;
         }
 
@@ -103,7 +118,7 @@ internal static partial class Program
         if (string.IsNullOrEmpty(apiKey))
         {
             AnsiConsole.MarkupLine($"[red]Missing {apiKeyEnvVar} environment variable.[/]");
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_API_KEY");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_API_KEY");
             return 1;
         }
 
@@ -113,7 +128,7 @@ internal static partial class Program
 
         using var chatClient = CompositeDisposableChatClient.CreateWithFunctionInvocation(openAiClient, ModelId);
 
-        OutlookMailTools.InitializeSpamStorage(settings);
+        OutlookMailTools.InitializeSpamStorage(spamSettings);
 
         var tools = new ChatOptions
         {
@@ -140,25 +155,25 @@ internal static partial class Program
                 .Border(BoxBorder.Rounded)
                 .BorderColor(Color.Green));
 
-            activity?.SetStatus(ActivityStatusCode.Ok);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok);
             return 0;
         }
         catch (HttpRequestException ex)
         {
             AnsiConsole.MarkupLine($"[red]Network error: {Markup.Escape(ex.Message)}[/]");
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             return 1;
         }
         catch (TaskCanceledException ex)
         {
             AnsiConsole.MarkupLine($"[red]Request timed out: {Markup.Escape(ex.Message)}[/]");
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             return 1;
         }
         catch (InvalidOperationException ex)
         {
             AnsiConsole.MarkupLine($"[red]Error: {Markup.Escape(ex.Message)}[/]");
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             return 1;
         }
     }
@@ -170,7 +185,8 @@ internal static partial class Program
         using var agent = new SpamFilterAgent(settings);
 
         using var cts = new CancellationTokenSource();
-        ConsoleCancelEventHandler cancelHandler = (_, e) =>
+
+        void CancelHandler(object? sender, ConsoleCancelEventArgs e)
         {
             e.Cancel = true;
             try
@@ -183,25 +199,25 @@ internal static partial class Program
             }
 
             AnsiConsole.MarkupLine("\n[yellow]Cancellation requested...[/]");
-        };
+        }
 
-        System.Console.CancelKeyPress += cancelHandler;
+        System.Console.CancelKeyPress += CancelHandler;
 
         try
         {
             await agent.RunAsync(cts.Token).ConfigureAwait(false);
-            activity?.SetStatus(ActivityStatusCode.Ok);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok);
             return 0;
         }
         catch (OperationCanceledException)
         {
             AnsiConsole.MarkupLine(CancelledByUserMessage);
-            activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
             return 0;
         }
         finally
         {
-            System.Console.CancelKeyPress -= cancelHandler;
+            System.Console.CancelKeyPress -= CancelHandler;
         }
     }
 
@@ -218,13 +234,13 @@ internal static partial class Program
         try
         {
             await agent.RunAsync(cts.Token).ConfigureAwait(false);
-            activity?.SetStatus(ActivityStatusCode.Ok);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok);
             return 0;
         }
         catch (OperationCanceledException)
         {
             AnsiConsole.MarkupLine(CancelledByUserMessage);
-            activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
             return 0;
         }
         finally
@@ -246,13 +262,13 @@ internal static partial class Program
         try
         {
             await agent.RunAsync(cts.Token).ConfigureAwait(false);
-            activity?.SetStatus(ActivityStatusCode.Ok);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok);
             return 0;
         }
         catch (OperationCanceledException)
         {
             AnsiConsole.MarkupLine(CancelledByUserMessage);
-            activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
             return 0;
         }
         finally
@@ -274,19 +290,334 @@ internal static partial class Program
         try
         {
             await agent.RunAsync(cts.Token).ConfigureAwait(false);
-            activity?.SetStatus(ActivityStatusCode.Ok);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok);
             return 0;
         }
         catch (OperationCanceledException)
         {
             AnsiConsole.MarkupLine(CancelledByUserMessage);
-            activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
             return 0;
         }
         finally
         {
             System.Console.CancelKeyPress -= cancelHandler;
         }
+    }
+
+    private static async Task<int> RunCoordinatorAgentAsync(
+        Configuration.A2ASettings a2aSettings,
+        TelemetrySetup telemetry,
+        string? initialPrompt = null)
+    {
+        using var activity = telemetry.ActivitySource.StartActivity("RunCoordinatorAgent");
+
+        using var cts = new CancellationTokenSource();
+        var cancelHandler = CreateCancelHandler(cts);
+        System.Console.CancelKeyPress += cancelHandler;
+
+        try
+        {
+            DisplayCoordinatorHeader();
+
+            var coordinatorAgent = await CreateCoordinatorWithRemoteOrLocalAgent(a2aSettings, cts.Token)
+                .ConfigureAwait(false);
+
+            AnsiConsole.MarkupLine("[dim]Commands: exit[/]\n");
+
+            await RunCoordinatorChatLoopAsync(coordinatorAgent, cts.Token, initialPrompt).ConfigureAwait(false);
+
+            AnsiConsole.MarkupLine("[dim]Coordinator session ended.[/]");
+            _ = activity?.SetStatus(ActivityStatusCode.Ok);
+            return 0;
+        }
+        catch (OperationCanceledException)
+        {
+            AnsiConsole.MarkupLine(CancelledByUserMessage);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
+            return 0;
+        }
+        finally
+        {
+            Agents.Infrastructure.RemoteAgentTool.ClearRemoteAgent();
+            System.Console.CancelKeyPress -= cancelHandler;
+        }
+    }
+
+    private static void DisplayCoordinatorHeader()
+    {
+        AnsiConsole.Write(new FigletText("Coordinator").Color(Color.Blue));
+        AnsiConsole.MarkupLine("[dim]Multi-agent orchestration system using MS Agent Framework[/]");
+    }
+
+    private static async Task<AIAgent> CreateCoordinatorWithRemoteOrLocalAgent(
+        Configuration.A2ASettings a2aSettings,
+        CancellationToken cancellationToken)
+    {
+        var envUrl = Environment.GetEnvironmentVariable(ResearchAgentUrlEnvVar);
+        var researchAgentUrl = !string.IsNullOrEmpty(envUrl) ? new Uri(envUrl) : a2aSettings.DefaultResearchAgentUrl;
+
+        try
+        {
+            AnsiConsole.MarkupLine($"[dim]Attempting to connect to Azure Function at {researchAgentUrl}...[/]");
+
+            var remoteAgent = await Agents.Infrastructure.A2AAgentClient
+                .ConnectAsync(researchAgentUrl, cancellationToken)
+                .ConfigureAwait(false);
+
+            Agents.Infrastructure.RemoteAgentTool.SetRemoteAgent(remoteAgent);
+            var remoteResearchTool = Agents.Infrastructure.RemoteAgentTool.CreateTool();
+
+            AnsiConsole.MarkupLine($"[green]✓ Connected to remote ResearchAgent: {remoteAgent.Name}[/]");
+            AnsiConsole.MarkupLine("[dim]Research tasks will be delegated to Azure Function[/]");
+
+            return CoordinatorAgent.CreateWithRemoteAgent(remoteResearchTool);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            AnsiConsole.MarkupLine($"[yellow]⚠ Could not connect to Azure Function: {Markup.Escape(ex.Message)}[/]");
+            AnsiConsole.MarkupLine("[dim]Using local ResearchAgent instead[/]");
+            return CoordinatorAgent.Create(ResearchAgent.Create());
+        }
+    }
+
+    private static async Task RunCoordinatorChatLoopAsync(
+        AIAgent coordinatorAgent,
+        CancellationToken cancellationToken,
+        string? initialPrompt = null)
+    {
+        // Process initial prompt if provided (from /coordinate <prompt> syntax)
+        if (!string.IsNullOrWhiteSpace(initialPrompt))
+        {
+            await ProcessCoordinatorPromptAsync(coordinatorAgent, initialPrompt, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var input = await AnsiConsole.AskAsync<string>("[green]You>[/] ", cancellationToken)
+                .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                continue;
+            }
+
+            if (input.Equals("exit", StringComparison.OrdinalIgnoreCase) ||
+                input.Equals("quit", StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+
+            await ProcessCoordinatorPromptAsync(coordinatorAgent, input, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task ProcessCoordinatorPromptAsync(
+        AIAgent coordinatorAgent,
+        string input,
+        CancellationToken cancellationToken)
+    {
+        AgentRunResponse? response = null;
+
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(Style.Parse("blue"))
+            .StartAsync("Coordinating...", async ctx =>
+            {
+                _ = ctx.Status("Processing task...");
+                response = await coordinatorAgent.RunAsync(input, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            })
+            .ConfigureAwait(false);
+
+        AnsiConsole.Write(new Panel(Markup.Escape(response?.Text ?? "No response"))
+            .Header("[blue]Coordinator[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.Blue));
+        AnsiConsole.WriteLine();
+    }
+
+    private static async Task<int> RunDistributedCoordinatorAsync(
+        Configuration.A2ASettings a2aSettings,
+        TelemetrySetup telemetry)
+    {
+        using var activity = telemetry.ActivitySource.StartActivity("RunDistributedCoordinator");
+
+        using var cts = new CancellationTokenSource();
+        var cancelHandler = CreateCancelHandler(cts);
+        System.Console.CancelKeyPress += cancelHandler;
+
+        try
+        {
+            DisplayDistributedHeader();
+
+            var envUrl = Environment.GetEnvironmentVariable(ResearchAgentUrlEnvVar);
+            var researchAgentUrl = !string.IsNullOrEmpty(envUrl) ? new Uri(envUrl) : a2aSettings.DefaultResearchAgentUrl;
+            AnsiConsole.MarkupLine($"[dim]Research Agent URL: {researchAgentUrl}[/]");
+            AnsiConsole.MarkupLine("[dim]Commands: exit[/]\n");
+
+            var remoteResearchAgent = await ConnectToRemoteAgentAsync(researchAgentUrl.ToString(), cts.Token)
+                .ConfigureAwait(false);
+
+            if (remoteResearchAgent is null)
+            {
+                AnsiConsole.MarkupLine("[red]Failed to connect to remote research agent.[/]");
+                _ = activity?.SetStatus(ActivityStatusCode.Error, "Failed to connect to remote research agent");
+                return 1;
+            }
+
+            AnsiConsole.MarkupLine($"[green]Connected to {remoteResearchAgent.Name}[/]");
+            AnsiConsole.MarkupLine($"[dim]{remoteResearchAgent.Description}[/]\n");
+
+            await RunDistributedChatLoopAsync(remoteResearchAgent, cts.Token).ConfigureAwait(false);
+
+            AnsiConsole.MarkupLine("[dim]Distributed coordinator session ended.[/]");
+            _ = activity?.SetStatus(ActivityStatusCode.Ok);
+            return 0;
+        }
+        catch (HttpRequestException ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Failed to connect to remote agent: {Markup.Escape(ex.Message)}[/]");
+            AnsiConsole.MarkupLine("[dim]Make sure the remote agent is running and accessible.[/]");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            return 1;
+        }
+        catch (OperationCanceledException)
+        {
+            AnsiConsole.MarkupLine(CancelledByUserMessage);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
+            return 0;
+        }
+        finally
+        {
+            System.Console.CancelKeyPress -= cancelHandler;
+        }
+    }
+
+    private static void DisplayDistributedHeader()
+    {
+        AnsiConsole.Write(new FigletText("Distributed").Color(Color.Magenta1));
+        AnsiConsole.MarkupLine("[dim]Multi-agent orchestration via A2A protocol[/]");
+        AnsiConsole.MarkupLine("[dim]Connects to remote agents using Agent-to-Agent protocol[/]\n");
+    }
+
+    private static async Task<Agents.Infrastructure.A2AAgentClient?> ConnectToRemoteAgentAsync(
+        string url,
+        CancellationToken cancellationToken)
+    {
+        Agents.Infrastructure.A2AAgentClient? client = null;
+
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(Style.Parse("magenta"))
+            .StartAsync("Connecting to remote research agent...", async _ =>
+            {
+                client = await Agents.Infrastructure.A2AAgentClient
+                    .ConnectAsync(new Uri(url), cancellationToken)
+                    .ConfigureAwait(false);
+            })
+            .ConfigureAwait(false);
+
+        return client;
+    }
+
+    private static async Task RunDistributedChatLoopAsync(
+        Agents.Infrastructure.A2AAgentClient remoteAgent,
+        CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var input = await AnsiConsole.AskAsync<string>("[green]You>[/] ", cancellationToken)
+                .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                continue;
+            }
+
+            if (input.Equals("exit", StringComparison.OrdinalIgnoreCase) ||
+                input.Equals("quit", StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+
+            string? response = null;
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("magenta"))
+                .StartAsync("Sending to remote agent...", async _ =>
+                {
+                    response = await remoteAgent.SendMessageAsync(input, cancellationToken)
+                        .ConfigureAwait(false);
+                })
+                .ConfigureAwait(false);
+
+            AnsiConsole.Write(new Panel(Markup.Escape(response ?? "No response"))
+                .Header($"[magenta]{remoteAgent.Name}[/]")
+                .Border(BoxBorder.Rounded)
+                .BorderColor(Color.Magenta1));
+            AnsiConsole.WriteLine();
+        }
+    }
+
+    private static async Task<int> RunHostResearchAgentAsync(
+        Configuration.A2ASettings a2aSettings,
+        TelemetrySetup telemetry)
+    {
+        using var activity = telemetry.ActivitySource.StartActivity("RunHostResearchAgent");
+
+        using var cts = new CancellationTokenSource();
+        var cancelHandler = CreateCancelHandler(cts);
+        System.Console.CancelKeyPress += cancelHandler;
+
+        try
+        {
+            DisplayHostResearchHeader(a2aSettings.ResearchAgentHostPort);
+
+            var researchAgent = ResearchAgent.Create();
+            var hostUrl = new Uri($"http://localhost:{a2aSettings.ResearchAgentHostPort.ToString(CultureInfo.InvariantCulture)}/");
+            var agentCard = AgentCards.CreateResearchAgentCard(hostUrl);
+
+            var host = new A2AAgentHost(
+                researchAgent,
+                agentCard,
+                a2aSettings.ResearchAgentHostPort);
+
+            await using (host.ConfigureAwait(false))
+            {
+                await host.StartAsync(cts.Token).ConfigureAwait(false);
+
+                AnsiConsole.MarkupLine($"[green]ResearchAgent now listening at {hostUrl}[/]");
+                AnsiConsole.MarkupLine("[dim]Press Ctrl+C to stop the server[/]\n");
+                AnsiConsole.MarkupLine("[dim]To connect from another terminal, use /coordinate-distributed[/]");
+
+                await host.WaitForShutdownAsync(cts.Token).ConfigureAwait(false);
+            }
+
+            AnsiConsole.MarkupLine("[dim]A2A server stopped.[/]");
+            _ = activity?.SetStatus(ActivityStatusCode.Ok);
+            return 0;
+        }
+        catch (OperationCanceledException)
+        {
+            AnsiConsole.MarkupLine(CancelledByUserMessage);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok, CancelledByUserStatus);
+            return 0;
+        }
+        finally
+        {
+            System.Console.CancelKeyPress -= cancelHandler;
+        }
+    }
+
+    private static void DisplayHostResearchHeader(int port)
+    {
+        AnsiConsole.Write(new FigletText("A2A Host").Color(Color.Green));
+        AnsiConsole.MarkupLine("[dim]Hosting ResearchAgent as A2A server[/]");
+        AnsiConsole.MarkupLine($"[dim]Port: {port.ToInvariant()}[/]\n");
     }
 
     private static ConsoleCancelEventHandler CreateCancelHandler(CancellationTokenSource cts) =>
@@ -305,7 +636,10 @@ internal static partial class Program
             AnsiConsole.MarkupLine("\n[yellow]Cancellation requested...[/]");
         };
 
-    private static async Task<int> RunInteractiveChatAsync(SpamFilterSettings settings, TelemetrySetup telemetry)
+    private static async Task<int> RunInteractiveChatAsync(
+        SpamFilterSettings spamSettings,
+        Configuration.A2ASettings a2aSettings,
+        TelemetrySetup telemetry)
     {
         using var activity = telemetry.ActivitySource.StartActivity("RunInteractiveChat");
 
@@ -318,7 +652,7 @@ internal static partial class Program
                 $"[dim]$env:{OpenRouterBaseUrlEnvVar} = \"https://openrouter.ai/api/v1\"[/]")
                 .Header("[yellow]Configuration Error[/]")
                 .Border(BoxBorder.Rounded));
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_BASE_URL");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_BASE_URL");
             return 1;
         }
 
@@ -335,7 +669,7 @@ internal static partial class Program
                 $"[dim]$env:{apiKeyEnvVar} = \"your-api-key\"[/]")
                 .Header("[yellow]Configuration Error[/]")
                 .Border(BoxBorder.Rounded));
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_API_KEY");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_API_KEY");
             return 1;
         }
 
@@ -348,7 +682,7 @@ internal static partial class Program
         using var chatClient = CompositeDisposableChatClient.CreateWithFunctionInvocation(openAiClient, ModelId);
 
         // Initialize spam storage for mail tool's spam registry modes
-        OutlookMailTools.InitializeSpamStorage(settings);
+        OutlookMailTools.InitializeSpamStorage(spamSettings);
 
         // Register tools
         var tools = new ChatOptions
@@ -371,10 +705,11 @@ internal static partial class Program
         List<ChatMessage> history = [];
 
         // Main chat loop
-        await RunChatLoopAsync(chatClient, tools, history, settings, telemetry, modelService).ConfigureAwait(false);
+        await RunChatLoopAsync(chatClient, tools, history, spamSettings, a2aSettings, telemetry, modelService)
+            .ConfigureAwait(false);
 
         AnsiConsole.MarkupLine("[dim]Goodbye![/]");
-        activity?.SetStatus(ActivityStatusCode.Ok);
+        _ = activity?.SetStatus(ActivityStatusCode.Ok);
         return 0;
     }
 
@@ -390,7 +725,7 @@ internal static partial class Program
 
         foreach (var tool in (tools.Tools ?? []).OfType<AIFunction>())
         {
-            toolsTable.AddRow($"[green]{tool.Name}[/]", tool.Description ?? string.Empty);
+            _ = toolsTable.AddRow($"[green]{tool.Name}[/]", tool.Description ?? string.Empty);
         }
 
         AnsiConsole.Write(toolsTable);
@@ -402,60 +737,94 @@ internal static partial class Program
             .AddColumn("[blue]Description[/]")
             .AddColumn("[blue]Command[/]");
 
-        agentsTable.AddRow(
+        _ = agentsTable.AddRow(
             "[cyan]SpamFilter[/]",
             "Interactive spam filter with autonomous capabilities",
             "[dim]/spam[/]");
-        agentsTable.AddRow(
+        _ = agentsTable.AddRow(
             "[cyan]SpamScan[/]",
             "Autonomous scan: identifies suspicious domains, flags for human review",
             "[dim]/spam-scan[/]");
-        agentsTable.AddRow(
+        _ = agentsTable.AddRow(
             "[cyan]SpamReview[/]",
             "Human review: batch review flagged domains, add to blocklist",
             "[dim]/spam-review[/]");
-        agentsTable.AddRow(
+        _ = agentsTable.AddRow(
             "[cyan]SpamCleanup[/]",
             "Cleanup: move emails from blocked domains to junk folder",
             "[dim]/spam-cleanup[/]");
+        _ = agentsTable.AddRow(
+            "[magenta]Coordinator[/]",
+            "Multi-agent orchestration: delegates tasks to specialized agents",
+            "[dim]/coordinate[/]");
+        _ = agentsTable.AddRow(
+            "[magenta1]Distributed[/]",
+            "A2A protocol: connects to remote agents via Agent-to-Agent protocol",
+            "[dim]/coordinate-distributed[/]");
+        _ = agentsTable.AddRow(
+            "[green]HostResearch[/]",
+            "A2A server: hosts ResearchAgent as an A2A endpoint for remote access",
+            "[dim]/host-research[/]");
 
         AnsiConsole.Write(agentsTable);
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Commands: /spam, /spam-scan, /spam-review, /spam-cleanup, /clear, /usage, exit[/]\n");
+
+        const string availableCommands =
+            "[dim]Commands: /spam, /spam-scan, /spam-review, /spam-cleanup, " +
+            "/coordinate, /coordinate-distributed, /host-research, /clear, /usage, exit[/]";
+        AnsiConsole.MarkupLine(availableCommands + "\n");
     }
 
-    private static ChatCommand ParseCommand(string? input) =>
-        string.IsNullOrWhiteSpace(input)
-            ? ChatCommand.Empty
-            : input.Trim().ToUpperInvariant() switch
-            {
-                "EXIT" => ChatCommand.Exit,
-                "/CLEAR" => ChatCommand.Clear,
-                "/USAGE" => ChatCommand.Usage,
-                "/SPAM" => ChatCommand.Spam,
-                "/SPAM-SCAN" => ChatCommand.SpamScan,
-                "/SPAM-REVIEW" => ChatCommand.SpamReview,
-                "/SPAM-CLEANUP" => ChatCommand.SpamCleanup,
-                _ => ChatCommand.Message,
-            };
+    private static (ChatCommand Command, string? Argument) ParseCommand(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return (ChatCommand.Empty, null);
+        }
+
+        var trimmed = input.Trim();
+        var upper = trimmed.ToUpperInvariant();
+
+        // Exact matches for simple commands
+        return upper switch
+        {
+            "EXIT" => (ChatCommand.Exit, null),
+            "/CLEAR" => (ChatCommand.Clear, null),
+            "/USAGE" => (ChatCommand.Usage, null),
+            "/SPAM" => (ChatCommand.Spam, null),
+            "/SPAM-SCAN" => (ChatCommand.SpamScan, null),
+            "/SPAM-REVIEW" => (ChatCommand.SpamReview, null),
+            "/SPAM-CLEANUP" => (ChatCommand.SpamCleanup, null),
+            "/COORDINATE" => (ChatCommand.Coordinate, null),
+            "/COORDINATE-DISTRIBUTED" => (ChatCommand.CoordinateDistributed, null),
+            "/HOST-RESEARCH" => (ChatCommand.HostResearch, null),
+            _ when upper.StartsWith("/COORDINATE ", StringComparison.Ordinal) =>
+                (ChatCommand.Coordinate, trimmed["/COORDINATE ".Length..].Trim()),
+            _ when upper.StartsWith("/COORDINATE-DISTRIBUTED ", StringComparison.Ordinal) =>
+                (ChatCommand.CoordinateDistributed, trimmed["/COORDINATE-DISTRIBUTED ".Length..].Trim()),
+            _ => (ChatCommand.Message, null),
+        };
+    }
 
     private static async Task RunChatLoopAsync(
         IChatClient chatClient,
         ChatOptions tools,
         List<ChatMessage> history,
-        SpamFilterSettings settings,
+        SpamFilterSettings spamSettings,
+        Configuration.A2ASettings a2aSettings,
         TelemetrySetup telemetry,
         OpenRouterModelService modelService)
     {
         var sessionTokens = new TokenUsageTracker();
+        var context = new CommandContext(spamSettings, a2aSettings, telemetry, modelService);
 
         while (true)
         {
             var userInput = CommandInputService.ReadInput();
 
-            var command = ParseCommand(userInput);
-            if (await HandleCommandAsync(
-                command, history, sessionTokens, settings, telemetry, modelService).ConfigureAwait(false))
+            var (command, argument) = ParseCommand(userInput);
+            if (await HandleCommandAsync(command, argument, history, sessionTokens, context)
+                .ConfigureAwait(false))
             {
                 continue;
             }
@@ -467,17 +836,17 @@ internal static partial class Program
 
             history.Add(new ChatMessage(ChatRole.User, userInput));
 
-            await ProcessUserInputAsync(chatClient, tools, history, sessionTokens, telemetry, modelService).ConfigureAwait(false);
+            await ProcessUserInputAsync(chatClient, tools, history, sessionTokens, telemetry, modelService)
+                .ConfigureAwait(false);
         }
     }
 
     private static async Task<bool> HandleCommandAsync(
         ChatCommand command,
+        string? argument,
         List<ChatMessage> history,
         TokenUsageTracker sessionTokens,
-        SpamFilterSettings settings,
-        TelemetrySetup telemetry,
-        OpenRouterModelService modelService)
+        CommandContext context)
     {
         switch (command)
         {
@@ -487,31 +856,46 @@ internal static partial class Program
             case ChatCommand.Clear:
                 history.Clear();
                 sessionTokens.Reset();
-                await FetchAndDisplayModelInfoAsync(modelService).ConfigureAwait(false);
+                await FetchAndDisplayModelInfoAsync(context.ModelService).ConfigureAwait(false);
                 AnsiConsole.MarkupLine("[yellow]Chat history and token counters cleared.[/]\n");
                 return true;
 
             case ChatCommand.Usage:
-                DisplayUsageInfo(sessionTokens, history.Count, modelService.Info?.ContextLength);
+                DisplayUsageInfo(sessionTokens, history.Count, context.ModelService.Info?.ContextLength);
                 return true;
 
             case ChatCommand.Spam:
-                await RunSpamFilterAgentAsync(settings, telemetry).ConfigureAwait(false);
+                _ = await RunSpamFilterAgentAsync(context.SpamSettings, context.Telemetry).ConfigureAwait(false);
                 AnsiConsole.MarkupLine(ReturnedToChatModeMessage);
                 return true;
 
             case ChatCommand.SpamScan:
-                await RunSpamScanAgentAsync(settings, telemetry).ConfigureAwait(false);
+                _ = await RunSpamScanAgentAsync(context.SpamSettings, context.Telemetry).ConfigureAwait(false);
                 AnsiConsole.MarkupLine(ReturnedToChatModeMessage);
                 return true;
 
             case ChatCommand.SpamReview:
-                await RunSpamReviewAgentAsync(settings, telemetry).ConfigureAwait(false);
+                _ = await RunSpamReviewAgentAsync(context.SpamSettings, context.Telemetry).ConfigureAwait(false);
                 AnsiConsole.MarkupLine(ReturnedToChatModeMessage);
                 return true;
 
             case ChatCommand.SpamCleanup:
-                await RunSpamCleanupAgentAsync(settings, telemetry).ConfigureAwait(false);
+                _ = await RunSpamCleanupAgentAsync(context.SpamSettings, context.Telemetry).ConfigureAwait(false);
+                AnsiConsole.MarkupLine(ReturnedToChatModeMessage);
+                return true;
+
+            case ChatCommand.Coordinate:
+                _ = await RunCoordinatorAgentAsync(context.A2ASettings, context.Telemetry, argument).ConfigureAwait(false);
+                AnsiConsole.MarkupLine(ReturnedToChatModeMessage);
+                return true;
+
+            case ChatCommand.CoordinateDistributed:
+                _ = await RunDistributedCoordinatorAsync(context.A2ASettings, context.Telemetry).ConfigureAwait(false);
+                AnsiConsole.MarkupLine(ReturnedToChatModeMessage);
+                return true;
+
+            case ChatCommand.HostResearch:
+                _ = await RunHostResearchAgentAsync(context.A2ASettings, context.Telemetry).ConfigureAwait(false);
                 AnsiConsole.MarkupLine(ReturnedToChatModeMessage);
                 return true;
 
@@ -526,14 +910,17 @@ internal static partial class Program
         int? contextLength)
     {
         AnsiConsole.MarkupLine(
-            $"[cyan]Session: {sessionTokens.TotalInput:N0} in, " +
-            $"{sessionTokens.TotalOutput:N0} out ({sessionTokens.Total:N0} total)[/]");
-        AnsiConsole.MarkupLine($"[cyan]History: {historyCount} messages[/]");
+            $"[cyan]Session: {sessionTokens.TotalInput.ToInvariant("N0")} in, " +
+            $"{sessionTokens.TotalOutput.ToInvariant("N0")} out ({sessionTokens.Total.ToInvariant("N0")} total)[/]");
+        AnsiConsole.MarkupLine($"[cyan]History: {historyCount.ToInvariant()} messages[/]");
 
         if (contextLength.HasValue)
         {
             var pct = sessionTokens.Total * 100.0 / contextLength.Value;
-            AnsiConsole.MarkupLine($"[cyan]Context: {sessionTokens.Total:N0} / {contextLength.Value:N0} ({pct:F1}%)[/]");
+            var totalStr = sessionTokens.Total.ToInvariant("N0");
+            var contextStr = contextLength.Value.ToInvariant("N0");
+            var pctStr = pct.ToInvariant("F1");
+            AnsiConsole.MarkupLine($"[cyan]Context: {totalStr} / {contextStr} ({pctStr}%)[/]");
         }
 
         AnsiConsole.WriteLine();
@@ -544,15 +931,12 @@ internal static partial class Program
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .SpinnerStyle(Style.Parse("dim"))
-            .StartAsync("Fetching model info...", async _ =>
-            {
-                await modelService.FetchAsync().ConfigureAwait(false);
-            })
+            .StartAsync("Fetching model info...", async _ => await modelService.FetchAsync().ConfigureAwait(false))
             .ConfigureAwait(false);
 
         if (modelService.Info is not null)
         {
-            AnsiConsole.MarkupLine($"[dim]Context limit: {modelService.Info.ContextLength:N0} tokens[/]");
+            AnsiConsole.MarkupLine($"[dim]Context limit: {modelService.Info.ContextLength.ToInvariant("N0")} tokens[/]");
         }
     }
 
@@ -577,7 +961,7 @@ internal static partial class Program
                 .SpinnerStyle(Style.Parse("blue"))
                 .StartAsync("Thinking...", async ctx =>
                 {
-                    ctx.Status("Calling API...");
+                    _ = ctx.Status("Calling API...");
 
                     response = await chatClient.GetResponseAsync(history, tools, cts.Token).ConfigureAwait(false);
                 })
@@ -601,17 +985,17 @@ internal static partial class Program
                 AnsiConsole.WriteLine();
             }
 
-            activity?.SetStatus(ActivityStatusCode.Ok);
+            _ = activity?.SetStatus(ActivityStatusCode.Ok);
         }
         catch (HttpRequestException ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             LogNetworkError(logger, ex);
             ShowError($"Network error: {ex.Message}");
         }
         catch (TaskCanceledException ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             LogTimeout(logger, ex);
             ShowError(
                 "Request timed out after 10 minutes. This is an application timeout, not OpenRouter. " +
@@ -619,21 +1003,21 @@ internal static partial class Program
         }
         catch (InvalidOperationException ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             LogInvalidOperation(logger, ex);
             ShowError($"Error: {ex.Message}");
         }
         catch (ClientResultException ex) when (ex.Status == 404)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             LogModelNotFound(logger, ModelId, ex);
             ShowError($"Model '{ModelId}' not found. Verify the model ID at https://openrouter.ai/models");
         }
         catch (ClientResultException ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             LogApiError(logger, ex.Status, ex);
-            ShowError($"API error ({ex.Status}): {ex.Message}");
+            ShowError($"API error ({ex.Status.ToInvariant()}): {ex.Message}");
         }
     }
 
@@ -663,13 +1047,13 @@ internal static partial class Program
 
         var statusParts = new List<string>
         {
-            $"[dim]This:[/] [blue]{inputTokens:N0}[/][dim]→[/][green]{outputTokens:N0}[/]",
-            $"[dim]Session:[/] [cyan]{sessionTokens.Total:N0}[/]",
-            $"[dim]History:[/] [yellow]{historyCount}[/] [dim]msgs[/]",
+            $"[dim]This:[/] [blue]{inputTokens.ToInvariant("N0")}[/][dim]→[/][green]{outputTokens.ToInvariant("N0")}[/]",
+            $"[dim]Session:[/] [cyan]{sessionTokens.Total.ToInvariant("N0")}[/]",
+            $"[dim]History:[/] [yellow]{historyCount.ToInvariant()}[/] [dim]msgs[/]",
         };
 
         // Add context usage percentage if we know the limit
-        if (contextLength.HasValue && contextLength.Value > 0)
+        if (contextLength is > 0)
         {
             var pct = inputTokens * 100.0 / contextLength.Value;
             var color = pct switch
@@ -678,10 +1062,10 @@ internal static partial class Program
                 > 75 => "yellow",
                 _ => "green",
             };
-            statusParts.Add($"[dim]Context:[/] [{color}]{pct:F0}%[/]");
+            statusParts.Add($"[dim]Context:[/] [{color}]{pct.ToInvariant("F0")}%[/]");
         }
 
-        table.AddRow(string.Join("  [dim]│[/]  ", statusParts));
+        _ = table.AddRow(string.Join("  [dim]│[/]  ", statusParts));
         AnsiConsole.Write(table);
     }
 
@@ -723,4 +1107,17 @@ internal static partial class Program
             this.TotalOutput = 0;
         }
     }
+
+    /// <summary>
+    /// Context record to group command handler dependencies.
+    /// </summary>
+    /// <param name="SpamSettings">Spam filter configuration.</param>
+    /// <param name="A2ASettings">A2A protocol settings.</param>
+    /// <param name="Telemetry">Telemetry setup for tracing.</param>
+    /// <param name="ModelService">OpenRouter model service.</param>
+    private sealed record CommandContext(
+        SpamFilterSettings SpamSettings,
+        Configuration.A2ASettings A2ASettings,
+        TelemetrySetup Telemetry,
+        OpenRouterModelService ModelService);
 }

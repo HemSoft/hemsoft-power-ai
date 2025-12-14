@@ -24,7 +24,7 @@ public class SpamScanAgentTests : IDisposable
     public SpamScanAgentTests()
     {
         this.testDirectory = Path.Combine(Path.GetTempPath(), "SpamScanAgentTests_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this.testDirectory);
+        _ = Directory.CreateDirectory(this.testDirectory);
 
         this.settings = new SpamFilterSettings
         {
@@ -346,7 +346,7 @@ public class SpamScanAgentTests : IDisposable
         scanBatchResultType.GetProperty("SkippedKnown")?.SetValue(instance, 5);
         scanBatchResultType.GetProperty("SkippedPending")?.SetValue(instance, 3);
         scanBatchResultType.GetProperty("Flagged")?.SetValue(instance, 2);
-        scanBatchResultType.GetProperty("InboxWasEmpty")?.SetValue(instance, true);
+        scanBatchResultType.GetProperty("InboxWasEmpty")?.SetValue(instance, value: true);
 
         // Assert
         Assert.Equal(10, scanBatchResultType.GetProperty("Processed")?.GetValue(instance));
@@ -589,18 +589,18 @@ public class SpamScanAgentTests : IDisposable
         Assert.NotNull(instance);
 
         // Act
-        runStatsType.GetProperty("Iteration")?.SetValue(instance, 1000);
-        runStatsType.GetProperty("TotalProcessed")?.SetValue(instance, 1000000);
-        runStatsType.GetProperty("TotalSkippedKnown")?.SetValue(instance, 500000);
-        runStatsType.GetProperty("TotalSkippedPending")?.SetValue(instance, 250000);
-        runStatsType.GetProperty("TotalFlagged")?.SetValue(instance, 100000);
+        runStatsType.GetProperty("Iteration")?.SetValue(instance, 1_000);
+        runStatsType.GetProperty("TotalProcessed")?.SetValue(instance, 1_000_000);
+        runStatsType.GetProperty("TotalSkippedKnown")?.SetValue(instance, 500_000);
+        runStatsType.GetProperty("TotalSkippedPending")?.SetValue(instance, 250_000);
+        runStatsType.GetProperty("TotalFlagged")?.SetValue(instance, 100_000);
 
         // Assert
-        Assert.Equal(1000, runStatsType.GetProperty("Iteration")?.GetValue(instance));
-        Assert.Equal(1000000, runStatsType.GetProperty("TotalProcessed")?.GetValue(instance));
-        Assert.Equal(500000, runStatsType.GetProperty("TotalSkippedKnown")?.GetValue(instance));
-        Assert.Equal(250000, runStatsType.GetProperty("TotalSkippedPending")?.GetValue(instance));
-        Assert.Equal(100000, runStatsType.GetProperty("TotalFlagged")?.GetValue(instance));
+        Assert.Equal(1_000, runStatsType.GetProperty("Iteration")?.GetValue(instance));
+        Assert.Equal(1_000_000, runStatsType.GetProperty("TotalProcessed")?.GetValue(instance));
+        Assert.Equal(500_000, runStatsType.GetProperty("TotalSkippedKnown")?.GetValue(instance));
+        Assert.Equal(250_000, runStatsType.GetProperty("TotalSkippedPending")?.GetValue(instance));
+        Assert.Equal(100_000, runStatsType.GetProperty("TotalFlagged")?.GetValue(instance));
     }
 
     /// <summary>
@@ -777,7 +777,7 @@ public class SpamScanAgentTests : IDisposable
         // Arrange
         var originalBaseUrl = Environment.GetEnvironmentVariable("OPENROUTER_BASE_URL");
         var originalApiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
-        Environment.SetEnvironmentVariable("OPENROUTER_BASE_URL", null);
+        Environment.SetEnvironmentVariable("OPENROUTER_BASE_URL", value: null);
         Environment.SetEnvironmentVariable("OPENROUTER_API_KEY", "test-key");
 
         try
@@ -788,7 +788,7 @@ public class SpamScanAgentTests : IDisposable
                 BindingFlags.NonPublic | BindingFlags.Static);
             Assert.NotNull(method);
 
-            var result = method.Invoke(null, null);
+            var result = method.Invoke(obj: null, parameters: null);
             Assert.NotNull(result);
 
             // Use reflection to access tuple elements
@@ -819,7 +819,7 @@ public class SpamScanAgentTests : IDisposable
         var originalBaseUrl = Environment.GetEnvironmentVariable("OPENROUTER_BASE_URL");
         var originalApiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
         Environment.SetEnvironmentVariable("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1");
-        Environment.SetEnvironmentVariable("OPENROUTER_API_KEY", null);
+        Environment.SetEnvironmentVariable("OPENROUTER_API_KEY", value: null);
 
         try
         {
@@ -829,7 +829,7 @@ public class SpamScanAgentTests : IDisposable
                 BindingFlags.NonPublic | BindingFlags.Static);
             Assert.NotNull(method);
 
-            var result = method.Invoke(null, null);
+            var result = method.Invoke(obj: null, parameters: null);
             Assert.NotNull(result);
 
             // Use reflection to access tuple elements
@@ -870,7 +870,7 @@ public class SpamScanAgentTests : IDisposable
                 BindingFlags.NonPublic | BindingFlags.Static);
             Assert.NotNull(method);
 
-            var result = method.Invoke(null, null);
+            var result = method.Invoke(obj: null, parameters: null);
             Assert.NotNull(result);
 
             // Use reflection to access tuple elements
@@ -893,7 +893,7 @@ public class SpamScanAgentTests : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        this.Dispose(true);
+        this.Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -914,7 +914,7 @@ public class SpamScanAgentTests : IDisposable
             {
                 if (Directory.Exists(this.testDirectory))
                 {
-                    Directory.Delete(this.testDirectory, true);
+                    Directory.Delete(this.testDirectory, recursive: true);
                 }
             }
             catch (IOException)
@@ -934,7 +934,7 @@ public class SpamScanAgentTests : IDisposable
 
         Assert.NotNull(method);
 
-        var result = method.Invoke(null, [responseText]);
+        var result = method.Invoke(obj: null, [responseText]);
         Assert.NotNull(result);
 
         return new ScanBatchResultWrapper(result);
@@ -948,7 +948,7 @@ public class SpamScanAgentTests : IDisposable
 
         Assert.NotNull(method);
 
-        var result = method.Invoke(null, [text, maxLength]);
+        var result = method.Invoke(obj: null, [text, maxLength]);
         Assert.NotNull(result);
 
         return (string)result;

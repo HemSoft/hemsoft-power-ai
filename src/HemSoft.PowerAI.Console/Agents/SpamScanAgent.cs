@@ -7,8 +7,10 @@ namespace HemSoft.PowerAI.Console.Agents;
 using System.ClientModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 using HemSoft.PowerAI.Console.Configuration;
+using HemSoft.PowerAI.Console.Extensions;
 using HemSoft.PowerAI.Console.Services;
 
 using Microsoft.Agents.AI;
@@ -23,7 +25,7 @@ using Spectre.Console;
 /// Does not delete emails - only identifies suspicious domains and adds them to HumanReview.json.
 /// </summary>
 [ExcludeFromCodeCoverage(Justification = "Agent requires OpenRouter API and Graph API authentication")]
-internal sealed class SpamScanAgent : IDisposable
+internal sealed partial class SpamScanAgent : IDisposable
 {
     private const string ModelId = "x-ai/grok-4.1-fast:free";
     private const string OpenRouterBaseUrlEnvVar = "OPENROUTER_BASE_URL";
@@ -103,7 +105,7 @@ internal sealed class SpamScanAgent : IDisposable
             while (!cancellationToken.IsCancellationRequested)
             {
                 stats.Iteration++;
-                AnsiConsole.MarkupLine($"\n[blue]═══ Scan Batch {stats.Iteration} ═══[/]");
+                AnsiConsole.MarkupLine($"\n[blue]═══ Scan Batch {stats.Iteration.ToInvariant()} ═══[/]");
 
                 var batchResult = await this.ProcessScanBatchAsync(agent, this.settings.BatchSize, cancellationToken).ConfigureAwait(false);
 
@@ -126,7 +128,9 @@ internal sealed class SpamScanAgent : IDisposable
                 stats.TotalSkippedPending += batchResult.SkippedPending;
                 stats.TotalFlagged += batchResult.Flagged;
 
-                AnsiConsole.MarkupLine($"[dim]Running totals: {stats.TotalProcessed} processed, {stats.TotalFlagged} flagged[/]");
+                AnsiConsole.MarkupLine(
+                    $"[dim]Running totals: {stats.TotalProcessed.ToInvariant()} processed, " +
+                    $"{stats.TotalFlagged.ToInvariant()} flagged[/]");
 
                 await Task.Delay(this.settings.DelayBetweenBatchesSeconds * 1000, cancellationToken).ConfigureAwait(false);
             }
@@ -149,16 +153,16 @@ internal sealed class SpamScanAgent : IDisposable
 
     private static void DisplayFinalSummary(RunStats stats, int pendingReviewCount)
     {
-        AnsiConsole.MarkupLine($"\n[green]═══ Scan Complete ═══[/]");
-        AnsiConsole.MarkupLine($"[green]Total emails scanned: {stats.TotalProcessed}[/]");
-        AnsiConsole.MarkupLine($"[green]Skipped (known spam): {stats.TotalSkippedKnown}[/]");
-        AnsiConsole.MarkupLine($"[green]Skipped (pending review): {stats.TotalSkippedPending}[/]");
-        AnsiConsole.MarkupLine($"[yellow]New domains flagged: {stats.TotalFlagged}[/]");
-        AnsiConsole.MarkupLine($"\n[cyan]Total domains pending review: {pendingReviewCount}[/]");
+        AnsiConsole.MarkupLine("\n[green]═══ Scan Complete ═══[/]");
+        AnsiConsole.MarkupLine($"[green]Total emails scanned: {stats.TotalProcessed.ToInvariant()}[/]");
+        AnsiConsole.MarkupLine($"[green]Skipped (known spam): {stats.TotalSkippedKnown.ToInvariant()}[/]");
+        AnsiConsole.MarkupLine($"[green]Skipped (pending review): {stats.TotalSkippedPending.ToInvariant()}[/]");
+        AnsiConsole.MarkupLine($"[yellow]New domains flagged: {stats.TotalFlagged.ToInvariant()}[/]");
+        AnsiConsole.MarkupLine($"\n[cyan]Total domains pending review: {pendingReviewCount.ToInvariant()}[/]");
 
         if (pendingReviewCount > 0)
         {
-            AnsiConsole.MarkupLine($"\n[yellow]Run /spam-review to process flagged domains.[/]");
+            AnsiConsole.MarkupLine("\n[yellow]Run /spam-review to process flagged domains.[/]");
         }
     }
 
@@ -166,7 +170,9 @@ internal sealed class SpamScanAgent : IDisposable
     {
         AnsiConsole.Write(new FigletText("Spam Scan").Color(Color.Blue));
         AnsiConsole.MarkupLine($"[dim]Model: {ModelId}[/]");
-        AnsiConsole.MarkupLine($"[dim]Batch Size: {settings.BatchSize} | Delay: {settings.DelayBetweenBatchesSeconds}s[/]\n");
+        AnsiConsole.MarkupLine(
+            $"[dim]Batch Size: {settings.BatchSize.ToInvariant()} | " +
+            $"Delay: {settings.DelayBetweenBatchesSeconds.ToInvariant()}s[/]\n");
 
         AnsiConsole.MarkupLine("[dim]Autonomous scan mode - identifying suspicious domains for review.[/]");
         AnsiConsole.MarkupLine("[dim]No emails will be moved or deleted.[/]");
@@ -215,16 +221,7 @@ internal sealed class SpamScanAgent : IDisposable
             return result;
         }
 
-        const string StatsPattern =
-            @"BATCH_STATS:\s*processed\s*=\s*(?<processed>\d+)\s*,\s*skipped_known\s*=\s*(?<skipped>\d+)\s*,\s*skipped_pending\s*=\s*(?<pending>\d+)\s*,\s*flagged\s*=\s*(?<flagged>\d+)";
-        const System.Text.RegularExpressions.RegexOptions StatsOptions =
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
-            System.Text.RegularExpressions.RegexOptions.ExplicitCapture;
-        var statsMatch = System.Text.RegularExpressions.Regex.Match(
-            responseText,
-            StatsPattern,
-            StatsOptions,
-            TimeSpan.FromSeconds(1));
+        var statsMatch = BatchStatsRegex().Match(responseText);
 
         if (statsMatch.Success)
         {
@@ -262,8 +259,8 @@ internal sealed class SpamScanAgent : IDisposable
             var subject = Truncate(scan.Subject, 33);
             var reason = Truncate(scan.Reason ?? "-", 18);
 
-            table.AddRow(
-                $"[dim]{rowNum}[/]",
+            _ = table.AddRow(
+                $"[dim]{rowNum.ToInvariant()}[/]",
                 Markup.Escape(domain),
                 Markup.Escape(subject),
                 $"[{statusColor}]{Markup.Escape(scan.Status)}[/]",
@@ -277,6 +274,12 @@ internal sealed class SpamScanAgent : IDisposable
     private static string Truncate(string text, int maxLength) =>
         text.Length <= maxLength ? text : text[..(maxLength - 1)] + "…";
 
+    [GeneratedRegex(
+        @"BATCH_STATS:\s*processed\s*=\s*(?<processed>\d+)\s*,\s*skipped_known\s*=\s*(?<skipped>\d+)\s*,\s*skipped_pending\s*=\s*(?<pending>\d+)\s*,\s*flagged\s*=\s*(?<flagged>\d+)",
+        RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: 1000)]
+    private static partial Regex BatchStatsRegex();
+
     private async Task<ScanBatchResult> ProcessScanBatchAsync(AIAgent agent, int batchSize, CancellationToken cancellationToken)
     {
         var result = new ScanBatchResult();
@@ -284,7 +287,7 @@ internal sealed class SpamScanAgent : IDisposable
 
         try
         {
-            var prompt = $"Scan a batch of {batchSize} emails from the inbox. " +
+            var prompt = $"Scan a batch of {batchSize.ToInvariant()} emails from the inbox. " +
                          "Follow your workflow to identify suspicious domains. " +
                          "Skip domains already in spam list or pending review. " +
                          "Flag new suspicious domains for human review. " +
@@ -302,7 +305,7 @@ internal sealed class SpamScanAgent : IDisposable
             }
             finally
             {
-                this.tools.SetResultCallback(null);
+                this.tools.SetResultCallback(callback: null);
             }
 
             if (this.currentBatchResults.Count > 0)

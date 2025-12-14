@@ -112,9 +112,9 @@ internal static class WebSearchTools
             return;
         }
 
-        sb.AppendLine("## Summary");
-        sb.AppendLine(answer);
-        sb.AppendLine();
+        _ = sb.AppendLine("## Summary")
+          .AppendLine(answer)
+          .AppendLine();
     }
 
     private static void AppendSources(StringBuilder sb, List<TavilyResult>? results)
@@ -124,7 +124,7 @@ internal static class WebSearchTools
             return;
         }
 
-        sb.AppendLine("## Sources");
+        _ = sb.AppendLine("## Sources");
         foreach (var result in results)
         {
             AppendSingleResult(sb, result);
@@ -133,18 +133,21 @@ internal static class WebSearchTools
 
     private static void AppendSingleResult(StringBuilder sb, TavilyResult result)
     {
-        sb.Append("- **").Append(result.Title).AppendLine("**");
-        sb.Append("  URL: ").AppendLine(result.Url);
+        _ = sb.Append("- **")
+          .Append(result.Title)
+          .AppendLine("**")
+          .Append("  URL: ")
+          .AppendLine(result.ResultUrl.ToString());
 
         if (!string.IsNullOrEmpty(result.Content))
         {
             var snippet = result.Content.Length > 200
-                ? string.Concat(result.Content.AsSpan(0, 200), "...")
+                ? $"{result.Content.AsSpan(0, 200)}..."
                 : result.Content;
-            sb.Append("  ").AppendLine(snippet);
+            _ = sb.Append("  ").AppendLine(snippet);
         }
 
-        sb.AppendLine();
+        _ = sb.AppendLine();
     }
 
     /// <summary>
@@ -189,7 +192,7 @@ internal static class WebSearchTools
         public string Title { get; init; } = string.Empty;
 
         [JsonPropertyName("url")]
-        public string Url { get; init; } = string.Empty;
+        public Uri ResultUrl { get; init; } = new Uri("about:blank");
 
         [JsonPropertyName("content")]
         public string? Content { get; init; }

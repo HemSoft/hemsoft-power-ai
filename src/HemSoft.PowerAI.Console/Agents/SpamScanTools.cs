@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 using HemSoft.PowerAI.Console.Services;
 
@@ -26,7 +27,7 @@ internal delegate void ScanResultCallback(SpamScanAgent.ScanResult result);
 /// <param name="storageService">The spam storage service.</param>
 /// <param name="humanReviewService">The human review service.</param>
 [ExcludeFromCodeCoverage(Justification = "Tools require Graph API authentication")]
-internal sealed class SpamScanTools(SpamStorageService storageService, HumanReviewService humanReviewService) : IDisposable
+internal sealed partial class SpamScanTools(SpamStorageService storageService, HumanReviewService humanReviewService) : IDisposable
 {
     private const string FolderInbox = "inbox";
 
@@ -79,12 +80,12 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
     public async Task<string> GetInboxEmailsAsync(int batchSize = 10)
     {
         using var activity = GraphApiActivitySource.StartActivity("GetInboxEmails");
-        activity?.SetTag("batch.size", batchSize);
+        _ = activity?.SetTag("batch.size", batchSize);
 
         var client = SharedGraphClient.GetClient();
         if (client is null)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
             return "Error: Set GRAPH_CLIENT_ID environment variable.";
         }
 
@@ -100,7 +101,7 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
 
             if (messages?.Value is not { Count: > 0 })
             {
-                activity?.SetTag("emails.fetched", 0);
+                _ = activity?.SetTag("emails.fetched", 0);
                 return "[]";
             }
 
@@ -109,7 +110,7 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
                 .Take(batchSize)
                 .ToList();
 
-            activity?.SetTag("emails.fetched", unprocessedEmails.Count);
+            _ = activity?.SetTag("emails.fetched", unprocessedEmails.Count);
 
             if (unprocessedEmails.Count == 0)
             {
@@ -118,7 +119,7 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
 
             foreach (var email in unprocessedEmails)
             {
-                this.processedMessageIds.Add(email.Id!);
+                _ = this.processedMessageIds.Add(email.Id!);
             }
 
             var result = unprocessedEmails.Select(m =>
@@ -139,7 +140,7 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
         }
         catch (ODataError ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
             return $"Error fetching emails: {ex.Error?.Message ?? ex.Message}";
         }
     }
@@ -155,12 +156,12 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
         ObjectDisposedException.ThrowIf(this.disposed, this);
 
         using var activity = GraphApiActivitySource.StartActivity("ReadEmail");
-        activity?.SetTag("message.id", messageId);
+        _ = activity?.SetTag("message.id", messageId);
 
         var client = SharedGraphClient.GetClient();
         if (client is null)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
             return "Error: Set GRAPH_CLIENT_ID environment variable.";
         }
 
@@ -171,12 +172,12 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
 
             if (message is null)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, "Message not found");
+                _ = activity?.SetStatus(ActivityStatusCode.Error, "Message not found");
                 return "Message not found";
             }
 
             var senderEmail = message.From?.EmailAddress?.Address ?? "unknown";
-            activity?.SetTag("sender.domain", ExtractDomain(senderEmail));
+            _ = activity?.SetTag("sender.domain", ExtractDomain(senderEmail));
 
             var result = new
             {
@@ -193,7 +194,7 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
         }
         catch (ODataError ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
             return $"Error reading email: {ex.Error?.Message ?? ex.Message}";
         }
     }
@@ -267,19 +268,15 @@ internal sealed class SpamScanTools(SpamStorageService storageService, HumanRevi
             return string.Empty;
         }
 
-        var text = System.Text.RegularExpressions.Regex.Replace(
-            body,
-            "<[^>]+>",
-            " ",
-            System.Text.RegularExpressions.RegexOptions.None,
-            TimeSpan.FromSeconds(1));
-        text = System.Text.RegularExpressions.Regex.Replace(
-            text,
-            @"\s+",
-            " ",
-            System.Text.RegularExpressions.RegexOptions.None,
-            TimeSpan.FromSeconds(1)).Trim();
+        var text = HtmlTagRegex().Replace(body, " ");
+        text = WhitespaceRegex().Replace(text, " ").Trim();
 
         return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }
+
+    [GeneratedRegex(@"<[^>]+>", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex HtmlTagRegex();
+
+    [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex WhitespaceRegex();
 }

@@ -19,6 +19,4 @@ using System.Diagnostics.CodeAnalysis;
     "CA1515",
     "CA1515:Consider making public types internal",
     Justification = "xUnit requires public collection definition classes")]
-public sealed class EnvironmentVariableTestsDefinition
-{
-}
+public sealed class EnvironmentVariableTestsDefinition;

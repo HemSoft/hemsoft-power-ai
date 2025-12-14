@@ -24,6 +24,7 @@ internal static class CommandInputService
         ["/spam-scan"] = "Scan inbox",
         ["/spam-review"] = "Review domains",
         ["/spam-cleanup"] = "Move to junk",
+        ["/coordinate"] = "Multi-agent mode",
         ["exit"] = "Exit",
     };
 
@@ -324,7 +325,7 @@ internal static class CommandInputService
 
     private static string? ShowCommandPicker(List<string> commands)
     {
-        var choices = commands.Select(c => $"{c,-14} [dim]{Commands[c]}[/]").ToList();
+        var choices = commands.ConvertAll(c => $"{c,-14} [dim]{Commands[c]}[/]");
         choices.Add("[dim]Cancel[/]");
 
         var selected = AnsiConsole.Prompt(
@@ -346,7 +347,7 @@ internal static class CommandInputService
 
     private static string? ShowPromptPicker(List<string> prompts)
     {
-        var choices = prompts.Select(p => $"{p,-20} [dim]{Prompts[p].Description}[/]").ToList();
+        var choices = prompts.ConvertAll(p => $"{p,-20} [dim]{Prompts[p].Description}[/]");
         choices.Add("[dim]Cancel[/]");
 
         var selected = AnsiConsole.Prompt(

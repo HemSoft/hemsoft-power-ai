@@ -57,15 +57,21 @@ public sealed class FileTraceExporterTests : IDisposable
         using var exporter = new FileTraceExporter(this.testDirectory, retentionDays: 7);
         using var activitySource = new ActivitySource("Test.Source");
 
+        static ActivitySamplingResult SampleAll(ref ActivityCreationOptions<ActivityContext> options)
+        {
+            _ = options; // Discard to satisfy unused parameter analyzer
+            return ActivitySamplingResult.AllData;
+        }
+
         using var listener = new ActivityListener
         {
-            ShouldListenTo = _ => true,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ShouldListenTo = static _ => true,
+            Sample = SampleAll,
         };
         ActivitySource.AddActivityListener(listener);
 
         using var activity = activitySource.StartActivity("TestOperation");
-        activity?.SetTag("test.key", "test.value");
+        _ = activity?.SetTag("test.key", "test.value");
         activity?.Stop();
 
         // Act
@@ -76,7 +82,7 @@ public sealed class FileTraceExporterTests : IDisposable
         Assert.Equal(ExportResult.Success, result);
 
         var files = Directory.GetFiles(this.testDirectory, "traces-*.jsonl");
-        Assert.Single(files);
+        _ = Assert.Single(files);
 
         var content = File.ReadAllText(files[0]);
         Assert.Contains("TestOperation", content, StringComparison.Ordinal);

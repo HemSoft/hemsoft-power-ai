@@ -35,6 +35,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\HemSoft.PowerAI.Console\HemSoft.PowerAI.Console.csproj" />
+    <ProjectReference Include="..\..\src\HemSoft.PowerAI.Shared\HemSoft.PowerAI.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>

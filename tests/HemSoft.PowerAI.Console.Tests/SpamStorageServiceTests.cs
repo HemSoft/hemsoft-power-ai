@@ -24,7 +24,7 @@ public class SpamStorageServiceTests : IDisposable
     public SpamStorageServiceTests()
     {
         this.testDirectory = Path.Combine(Path.GetTempPath(), "SpamStorageServiceTests" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this.testDirectory);
+        _ = Directory.CreateDirectory(this.testDirectory);
 
         this.settings = new SpamFilterSettings
         {
@@ -65,7 +65,7 @@ public class SpamStorageServiceTests : IDisposable
         // Assert
         Assert.True(result);
         var domains = this.sut.GetSpamDomains();
-        Assert.Single(domains);
+        _ = Assert.Single(domains);
         Assert.Equal("SPAM.EXAMPLE.COM", domains[0].Domain);
     }
 
@@ -77,14 +77,14 @@ public class SpamStorageServiceTests : IDisposable
     {
         // Arrange
         const string domain = "spam.example.com";
-        this.sut.AddSpamDomain(domain, "First");
+        _ = this.sut.AddSpamDomain(domain, "First");
 
         // Act
         var result = this.sut.AddSpamDomain(domain, "Second");
 
         // Assert
         Assert.False(result);
-        Assert.Single(this.sut.GetSpamDomains());
+        _ = Assert.Single(this.sut.GetSpamDomains());
     }
 
     /// <summary>
@@ -94,7 +94,7 @@ public class SpamStorageServiceTests : IDisposable
     public void IsKnownSpamDomainReturnsTrueForKnownDomain()
     {
         // Arrange
-        this.sut.AddSpamDomain("SPAM.COM", "Test");
+        _ = this.sut.AddSpamDomain("SPAM.COM", "Test");
 
         // Act - test case-insensitivity
         var result = this.sut.IsKnownSpamDomain("spam.com");
@@ -144,6 +144,8 @@ public class SpamStorageServiceTests : IDisposable
             Subject = "Win a prize!",
             SpamReason = "Suspicious content",
             ConfidenceScore = 0.9,
+            ReceivedAt = DateTimeOffset.UtcNow,
+            IdentifiedAt = DateTimeOffset.UtcNow,
         };
 
         // Act
@@ -152,7 +154,7 @@ public class SpamStorageServiceTests : IDisposable
         // Assert
         Assert.True(result);
         var candidates = this.sut.GetSpamCandidates();
-        Assert.Single(candidates);
+        _ = Assert.Single(candidates);
         Assert.Equal("msg123", candidates[0].MessageId);
     }
 
@@ -171,15 +173,17 @@ public class SpamStorageServiceTests : IDisposable
             Subject = "Win a prize!",
             SpamReason = "Suspicious content",
             ConfidenceScore = 0.9,
+            ReceivedAt = DateTimeOffset.UtcNow,
+            IdentifiedAt = DateTimeOffset.UtcNow,
         };
-        this.sut.AddSpamCandidate(candidate);
+        _ = this.sut.AddSpamCandidate(candidate);
 
         // Act
         var result = this.sut.AddSpamCandidate(candidate);
 
         // Assert
         Assert.False(result);
-        Assert.Single(this.sut.GetSpamCandidates());
+        _ = Assert.Single(this.sut.GetSpamCandidates());
     }
 
     /// <summary>
@@ -197,8 +201,10 @@ public class SpamStorageServiceTests : IDisposable
             Subject = "Win a prize!",
             SpamReason = "Suspicious content",
             ConfidenceScore = 0.9,
+            ReceivedAt = DateTimeOffset.UtcNow,
+            IdentifiedAt = DateTimeOffset.UtcNow,
         };
-        this.sut.AddSpamCandidate(candidate);
+        _ = this.sut.AddSpamCandidate(candidate);
 
         // Act
         var result = this.sut.RemoveSpamCandidate("msg123");
@@ -215,7 +221,7 @@ public class SpamStorageServiceTests : IDisposable
     public void GetCandidatesGroupedByDomainGroupsCorrectly()
     {
         // Arrange
-        this.sut.AddSpamCandidate(new SpamCandidate
+        _ = this.sut.AddSpamCandidate(new SpamCandidate
         {
             MessageId = "msg1",
             SenderEmail = "a@domain1.com",
@@ -223,8 +229,10 @@ public class SpamStorageServiceTests : IDisposable
             Subject = "Subject1",
             SpamReason = "Reason1",
             ConfidenceScore = 0.8,
+            ReceivedAt = DateTimeOffset.UtcNow,
+            IdentifiedAt = DateTimeOffset.UtcNow,
         });
-        this.sut.AddSpamCandidate(new SpamCandidate
+        _ = this.sut.AddSpamCandidate(new SpamCandidate
         {
             MessageId = "msg2",
             SenderEmail = "b@domain1.com",
@@ -232,8 +240,10 @@ public class SpamStorageServiceTests : IDisposable
             Subject = "Subject2",
             SpamReason = "Reason2",
             ConfidenceScore = 0.7,
+            ReceivedAt = DateTimeOffset.UtcNow,
+            IdentifiedAt = DateTimeOffset.UtcNow,
         });
-        this.sut.AddSpamCandidate(new SpamCandidate
+        _ = this.sut.AddSpamCandidate(new SpamCandidate
         {
             MessageId = "msg3",
             SenderEmail = "c@domain2.com",
@@ -241,6 +251,8 @@ public class SpamStorageServiceTests : IDisposable
             Subject = "Subject3",
             SpamReason = "Reason3",
             ConfidenceScore = 0.9,
+            ReceivedAt = DateTimeOffset.UtcNow,
+            IdentifiedAt = DateTimeOffset.UtcNow,
         });
 
         // Act
@@ -249,7 +261,7 @@ public class SpamStorageServiceTests : IDisposable
         // Assert
         Assert.Equal(2, grouped.Count);
         Assert.Equal(2, grouped["DOMAIN1.COM"].Count);
-        Assert.Single(grouped["DOMAIN2.COM"]);
+        _ = Assert.Single(grouped["DOMAIN2.COM"]);
     }
 
     /// <summary>
@@ -259,7 +271,7 @@ public class SpamStorageServiceTests : IDisposable
     public void ClearSpamCandidatesRemovesAllCandidates()
     {
         // Arrange
-        this.sut.AddSpamCandidate(new SpamCandidate
+        _ = this.sut.AddSpamCandidate(new SpamCandidate
         {
             MessageId = "msg1",
             SenderEmail = "a@test.com",
@@ -267,6 +279,8 @@ public class SpamStorageServiceTests : IDisposable
             Subject = "Test",
             SpamReason = "Test",
             ConfidenceScore = 0.5,
+            ReceivedAt = DateTimeOffset.UtcNow,
+            IdentifiedAt = DateTimeOffset.UtcNow,
         });
 
         // Act
@@ -279,7 +293,7 @@ public class SpamStorageServiceTests : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        this.Dispose(true);
+        this.Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -300,7 +314,7 @@ public class SpamStorageServiceTests : IDisposable
             {
                 if (Directory.Exists(this.testDirectory))
                 {
-                    Directory.Delete(this.testDirectory, true);
+                    Directory.Delete(this.testDirectory, recursive: true);
                 }
             }
             catch (IOException)

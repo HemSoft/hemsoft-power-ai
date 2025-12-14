@@ -36,7 +36,7 @@ public sealed class SharedGraphClientTests : IDisposable
         }
 
         // Arrange - ensure env var is not set
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", null);
+        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null);
 
         // Act
         using var client = SharedGraphClient.GetClient();
@@ -61,7 +61,7 @@ public sealed class SharedGraphClientTests : IDisposable
         }
 
         // Arrange - ensure env var is not set
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", null);
+        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null);
 
         // Act
         var result = SharedGraphClient.IsConfigured();

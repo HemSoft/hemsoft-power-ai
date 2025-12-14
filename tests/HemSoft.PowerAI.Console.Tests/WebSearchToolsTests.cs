@@ -49,7 +49,7 @@ public sealed class WebSearchToolsTests
         try
         {
             // Clear the environment variables
-            Environment.SetEnvironmentVariable("TAVILY_API_URL", null);
+            Environment.SetEnvironmentVariable("TAVILY_API_URL", value: null);
             Environment.SetEnvironmentVariable("TAVILY_API_KEY", "test-key");
 
             var result = await WebSearchTools.WebSearchAsync("test query");
@@ -79,7 +79,7 @@ public sealed class WebSearchToolsTests
         {
             // Set URL but clear API key
             Environment.SetEnvironmentVariable("TAVILY_API_URL", "https://api.tavily.com/search");
-            Environment.SetEnvironmentVariable("TAVILY_API_KEY", null);
+            Environment.SetEnvironmentVariable("TAVILY_API_KEY", value: null);
 
             var result = await WebSearchTools.WebSearchAsync("test query");
 
@@ -138,8 +138,8 @@ public sealed class WebSearchToolsTests
         try
         {
             // Clear env vars to trigger early return (we're testing parameter handling)
-            Environment.SetEnvironmentVariable("TAVILY_API_URL", null);
-            Environment.SetEnvironmentVariable("TAVILY_API_KEY", null);
+            Environment.SetEnvironmentVariable("TAVILY_API_URL", value: null);
+            Environment.SetEnvironmentVariable("TAVILY_API_KEY", value: null);
 
             // These should not throw even with out-of-range values
             var result1 = await WebSearchTools.WebSearchAsync("test", maxResults: -5);
@@ -201,8 +201,8 @@ public sealed class WebSearchToolsTests
         try
         {
             // Clear URL to trigger early return
-            Environment.SetEnvironmentVariable("TAVILY_API_URL", null);
-            Environment.SetEnvironmentVariable("TAVILY_API_KEY", null);
+            Environment.SetEnvironmentVariable("TAVILY_API_URL", value: null);
+            Environment.SetEnvironmentVariable("TAVILY_API_KEY", value: null);
 
             // Valid maxResults should not cause parameter errors
             var result = await WebSearchTools.WebSearchAsync("test", maxResults: 3);

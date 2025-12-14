@@ -5,6 +5,7 @@
 namespace HemSoft.PowerAI.Console.Tools;
 
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 
 /// <summary>
@@ -15,10 +16,12 @@ internal static class FileTools
     /// <summary>
     /// Queries the file system for information.
     /// </summary>
-    /// <param name="mode">Operation mode: 'list' (files in dir), 'count' (file count), 'info' (file details).</param>
+    /// <param name="mode">Operation mode: 'list' (files in dir), 'count' (file count), 'info' (file details), 'read' (file contents).</param>
     /// <param name="path">The file or directory path.</param>
     /// <returns>Query result or error message.</returns>
-    [Description("Query file system. Modes: 'list' (files in directory), 'count' (file count in directory), 'info' (file size/date)")]
+    [Description(
+        "Query file system. Modes: 'list' (files in directory), 'count' (file count), " +
+        "'info' (file size/date), 'read' (read file contents)")]
     public static string QueryFileSystem(string mode, string path)
     {
         System.Console.WriteLine($"[Tool] QueryFileSystem: {mode} {path}");
@@ -28,20 +31,21 @@ internal static class FileTools
             "LIST" => ListFiles(path),
             "COUNT" => CountFiles(path),
             "INFO" => GetFileInfo(path),
-            _ => $"Unknown mode '{mode}'. Use: list, count, info",
+            "READ" => ReadFileContents(path),
+            _ => $"Unknown mode '{mode}'. Use: list, count, info, read",
         };
     }
 
     /// <summary>
     /// Modifies the file system.
     /// </summary>
-    /// <param name="mode">Operation mode: 'mkdir' (create folder), 'delete' (remove file/folder), 'move', 'copy'.</param>
+    /// <param name="mode">Operation mode: 'mkdir' (create folder), 'delete' (remove file/folder), 'move', 'copy', 'write' (create/overwrite file).</param>
     /// <param name="path">The source path.</param>
-    /// <param name="destination">The destination path (for move/copy operations).</param>
+    /// <param name="destination">The destination path (for move/copy) or content (for write).</param>
     /// <returns>Result message or error.</returns>
     [Description(
-        "Modify file system. Modes: 'mkdir' (create folder), 'delete' (remove), 'move', 'copy'. " +
-        "Destination required for move/copy.")]
+        "Modify file system. Modes: 'mkdir' (create folder), 'delete' (remove), 'move', 'copy', " +
+        "'write' (create/overwrite). Destination for move/copy, content for write.")]
     public static string ModifyFileSystem(string mode, string path, string? destination = null)
     {
         System.Console.WriteLine($"[Tool] ModifyFileSystem: {mode} {path} -> {destination}");
@@ -52,7 +56,8 @@ internal static class FileTools
             "DELETE" => Delete(path),
             "MOVE" => Move(path, destination),
             "COPY" => Copy(path, destination),
-            _ => $"Unknown mode '{mode}'. Use: mkdir, delete, move, copy",
+            "WRITE" => WriteFile(path, destination),
+            _ => $"Unknown mode '{mode}'. Use: mkdir, delete, move, copy, write",
         };
     }
 
@@ -97,14 +102,44 @@ internal static class FileTools
         }
 
         var info = new FileInfo(path);
-        return $"{info.Name} | {info.Length:N0} bytes | Modified: {info.LastWriteTime:g}";
+        return string.Create(CultureInfo.InvariantCulture, $"{info.Name} | {info.Length:N0} bytes | Modified: {info.LastWriteTime:g}");
+    }
+
+    private static string ReadFileContents(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return $"File not found: {path}";
+        }
+
+        try
+        {
+            var content = File.ReadAllText(path);
+            if (string.IsNullOrEmpty(content))
+            {
+                return "[Empty file]";
+            }
+
+            const int maxLength = 10000;
+            if (content.Length <= maxLength)
+            {
+                return content;
+            }
+
+            var truncatedLength = content.Length.ToString("N0", CultureInfo.InvariantCulture);
+            return $"{content[..maxLength]}\n\n[Truncated - file is {truncatedLength} characters]";
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return FormatError("reading", path, ex);
+        }
     }
 
     private static string CreateFolder(string path)
     {
         try
         {
-            Directory.CreateDirectory(path);
+            _ = Directory.CreateDirectory(path);
             return $"Created: {path}";
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
@@ -188,6 +223,36 @@ internal static class FileTools
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
             return FormatError("copying", source, ex);
+        }
+    }
+
+    private static string WriteFile(string path, string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return "Content required for write operation (pass as destination parameter)";
+        }
+
+        try
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                _ = Directory.CreateDirectory(directory);
+            }
+
+            // Unescape common escape sequences that LLMs send as literal strings
+            var unescaped = content
+                .Replace("\\n", "\n", StringComparison.Ordinal)
+                .Replace("\\t", "\t", StringComparison.Ordinal)
+                .Replace("\\r", "\r", StringComparison.Ordinal);
+
+            File.WriteAllText(path, unescaped);
+            return $"Written {unescaped.Length.ToString("N0", CultureInfo.InvariantCulture)} characters to: {path}";
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return FormatError("writing", path, ex);
         }
     }
 }

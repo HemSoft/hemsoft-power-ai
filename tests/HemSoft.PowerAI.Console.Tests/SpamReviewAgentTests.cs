@@ -24,7 +24,7 @@ public class SpamReviewAgentTests : IDisposable
     public SpamReviewAgentTests()
     {
         this.testDirectory = Path.Combine(Path.GetTempPath(), "SpamReviewAgentTests_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this.testDirectory);
+        _ = Directory.CreateDirectory(this.testDirectory);
 
         this.settings = new SpamFilterSettings
         {
@@ -451,7 +451,7 @@ public class SpamReviewAgentTests : IDisposable
         const int maxLength = 0;
 
         // Act & Assert
-        Assert.Throws<TargetInvocationException>(() => InvokeTruncate(text, maxLength));
+        _ = Assert.Throws<TargetInvocationException>(() => InvokeTruncate(text, maxLength));
     }
 
     /// <summary>
@@ -503,7 +503,7 @@ public class SpamReviewAgentTests : IDisposable
         Assert.NotNull(method);
 
         // Act - should not throw even when blocklist is empty
-        var exception = Record.Exception(() => method.Invoke(agent, null));
+        var exception = Record.Exception(() => method.Invoke(agent, parameters: null));
 
         // Assert
         Assert.Null(exception);
@@ -527,7 +527,7 @@ public class SpamReviewAgentTests : IDisposable
         var storageService = storageField.GetValue(agent) as HemSoft.PowerAI.Console.Services.SpamStorageService;
         Assert.NotNull(storageService);
 
-        storageService.AddSpamDomain("TESTDOMAIN.COM", "Test reason");
+        _ = storageService.AddSpamDomain("TESTDOMAIN.COM", "Test reason");
 
         var method = typeof(SpamReviewAgent).GetMethod(
             "DisplayBlocklist",
@@ -536,7 +536,7 @@ public class SpamReviewAgentTests : IDisposable
         Assert.NotNull(method);
 
         // Act - should not throw
-        var exception = Record.Exception(() => method.Invoke(agent, null));
+        var exception = Record.Exception(() => method.Invoke(agent, parameters: null));
 
         // Assert
         Assert.Null(exception);
@@ -659,14 +659,14 @@ public class SpamReviewAgentTests : IDisposable
         var parameters = method.GetParameters();
 
         // Assert
-        Assert.Single(parameters);
+        _ = Assert.Single(parameters);
         Assert.Equal(typeof(CancellationToken), parameters[0].ParameterType);
     }
 
     /// <inheritdoc/>
     public void Dispose()
     {
-        this.Dispose(true);
+        this.Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -687,7 +687,7 @@ public class SpamReviewAgentTests : IDisposable
             {
                 if (Directory.Exists(this.testDirectory))
                 {
-                    Directory.Delete(this.testDirectory, true);
+                    Directory.Delete(this.testDirectory, recursive: true);
                 }
             }
             catch (IOException)
@@ -707,7 +707,7 @@ public class SpamReviewAgentTests : IDisposable
 
         Assert.NotNull(method);
 
-        var result = method.Invoke(null, [text, maxLength]);
+        var result = method.Invoke(obj: null, [text, maxLength]);
         Assert.NotNull(result);
 
         return (string)result;

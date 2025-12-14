@@ -124,12 +124,12 @@ internal sealed partial class TelemetrySetup : IDisposable
 
         if (config.HasOtlpEndpoint)
         {
-            builder.AddOtlpExporter(options => options.Endpoint = new Uri(config.OtlpEndpoint!));
+            _ = builder.AddOtlpExporter(options => options.Endpoint = new Uri(config.OtlpEndpoint!));
         }
 
         if (config.EnableConsoleExporter)
         {
-            builder.AddConsoleExporter();
+            _ = builder.AddConsoleExporter();
         }
 
         return builder.Build()!;
@@ -146,12 +146,12 @@ internal sealed partial class TelemetrySetup : IDisposable
 
         if (config.HasOtlpEndpoint)
         {
-            builder.AddOtlpExporter(options => options.Endpoint = new Uri(config.OtlpEndpoint!));
+            _ = builder.AddOtlpExporter(options => options.Endpoint = new Uri(config.OtlpEndpoint!));
         }
 
         if (config.EnableConsoleExporter)
         {
-            builder.AddConsoleExporter();
+            _ = builder.AddConsoleExporter();
         }
 
         return builder.Build()!;
@@ -160,23 +160,23 @@ internal sealed partial class TelemetrySetup : IDisposable
     private static ServiceProvider BuildLoggingServiceProvider(ResourceBuilder resourceBuilder, ExporterConfig config)
     {
         var services = new ServiceCollection();
-        services.AddLogging(logging =>
+        _ = services.AddLogging(logging =>
         {
-            logging.SetMinimumLevel(LogLevel.Debug);
-            logging.AddOpenTelemetry(options =>
+            _ = logging.SetMinimumLevel(LogLevel.Debug);
+            _ = logging.AddOpenTelemetry(options =>
             {
-                options.SetResourceBuilder(resourceBuilder);
+                _ = options.SetResourceBuilder(resourceBuilder);
                 options.IncludeScopes = true;
                 options.IncludeFormattedMessage = true;
 
                 if (config.HasOtlpEndpoint)
                 {
-                    options.AddOtlpExporter(otlpOptions => otlpOptions.Endpoint = new Uri(config.OtlpEndpoint!));
+                    _ = options.AddOtlpExporter(otlpOptions => otlpOptions.Endpoint = new Uri(config.OtlpEndpoint!));
                 }
 
                 if (config.EnableConsoleExporter)
                 {
-                    options.AddConsoleExporter();
+                    _ = options.AddConsoleExporter();
                 }
             });
         });

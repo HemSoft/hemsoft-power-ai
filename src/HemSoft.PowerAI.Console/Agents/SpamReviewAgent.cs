@@ -8,6 +8,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 using HemSoft.PowerAI.Console.Configuration;
+using HemSoft.PowerAI.Console.Extensions;
 using HemSoft.PowerAI.Console.Models;
 using HemSoft.PowerAI.Console.Services;
 
@@ -40,7 +41,7 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
         var prompt = new SelectionPrompt<string>()
             .Title("[cyan]What would you like to do?[/]")
             .AddChoices(
-                $"Review pending domains ({totalDomains} pending)",
+                $"Review pending domains ({totalDomains.ToInvariant()} pending)",
                 "Add domain to blocklist manually",
                 "View current blocklist");
 
@@ -66,7 +67,7 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
             return;
         }
 
-        AnsiConsole.MarkupLine($"[cyan]Found {totalDomains} domain(s) pending review.[/]\n");
+        AnsiConsole.MarkupLine($"[cyan]Found {totalDomains.ToInvariant()} domain(s) pending review.[/]\n");
 
         var stats = new ReviewStats();
         var batchNum = 0;
@@ -82,7 +83,7 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
             batchNum++;
             var batch = pendingDomains.Take(settings.ReviewBatchSize).ToList();
 
-            AnsiConsole.MarkupLine($"\n[blue]═══ Review Batch {batchNum} ({batch.Count} domains) ═══[/]");
+            AnsiConsole.MarkupLine($"\n[blue]═══ Review Batch {batchNum.ToInvariant()} ({batch.Count.ToInvariant()} domains) ═══[/]");
 
             await this.ProcessBatchAsync(batch, stats).ConfigureAwait(false);
 
@@ -93,7 +94,7 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
             }
 
             var continueReview = await AnsiConsole.ConfirmAsync(
-                $"[yellow]{stats.DomainsBlocked} domain(s) blocked. {remaining} remaining. Continue?[/]",
+                $"[yellow]{stats.DomainsBlocked.ToInvariant()} domain(s) blocked. {remaining.ToInvariant()} remaining. Continue?[/]",
                 defaultValue: true,
                 cancellationToken).ConfigureAwait(false);
 
@@ -125,14 +126,14 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
 
     private static void DisplaySummary(ReviewStats stats)
     {
-        AnsiConsole.MarkupLine($"\n[green]═══ Review Complete ═══[/]");
-        AnsiConsole.MarkupLine($"[green]Domains reviewed: {stats.DomainsReviewed}[/]");
-        AnsiConsole.MarkupLine($"[red]Added to blocklist: {stats.DomainsBlocked}[/]");
-        AnsiConsole.MarkupLine($"[green]Marked legitimate: {stats.DomainsLegitimate}[/]");
+        AnsiConsole.MarkupLine("\n[green]═══ Review Complete ═══[/]");
+        AnsiConsole.MarkupLine($"[green]Domains reviewed: {stats.DomainsReviewed.ToInvariant()}[/]");
+        AnsiConsole.MarkupLine($"[red]Added to blocklist: {stats.DomainsBlocked.ToInvariant()}[/]");
+        AnsiConsole.MarkupLine($"[green]Marked legitimate: {stats.DomainsLegitimate.ToInvariant()}[/]");
 
         if (stats.DomainsBlocked > 0)
         {
-            AnsiConsole.MarkupLine($"\n[yellow]Run /spam-cleanup to move blocked emails to junk.[/]");
+            AnsiConsole.MarkupLine("\n[yellow]Run /spam-cleanup to move blocked emails to junk.[/]");
         }
     }
 
@@ -208,10 +209,11 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
         var index = 1;
         foreach (var domain in domains.OrderBy(d => d.Domain, StringComparer.OrdinalIgnoreCase))
         {
-            table.AddRow(
-                $"[cyan]{index++}[/]",
+            var addedDate = string.Create(CultureInfo.InvariantCulture, $"{domain.AddedAt:yyyy-MM-dd}");
+            _ = table.AddRow(
+                string.Create(CultureInfo.InvariantCulture, $"[cyan]{index++}[/]"),
                 Markup.Escape(domain.Domain),
-                domain.AddedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                addedDate,
                 Markup.Escape(Truncate(domain.Reason ?? "-", 38)));
         }
 
@@ -239,8 +241,8 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
             var subject = sample?.Subject ?? "(no sample)";
             var reason = sample?.Reason ?? "-";
 
-            table.AddRow(
-                $"[cyan]{i + 1}[/]",
+            _ = table.AddRow(
+                $"[cyan]{(i + 1).ToInvariant()}[/]",
                 Markup.Escape(domain.Domain),
                 domain.EmailCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 Markup.Escape(Truncate(subject, 33)),
@@ -261,7 +263,7 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
             legitIndices = [.. input
                 .Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)
                 .Select(s => int.TryParse(s.Trim(), CultureInfo.InvariantCulture, out var n) ? n : 0)
-                .Where(n => n > 0 && n <= batch.Count)];
+                .Where(n => n > 0 && n <= batch.Count),];
         }
 
         // Process each domain
@@ -273,14 +275,14 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
             if (legitIndices.Contains(index))
             {
                 // User marked as legitimate - just remove from review queue
-                AnsiConsole.MarkupLine($"[green]#{index} {domain.Domain}[/] → Marked legitimate");
+                AnsiConsole.MarkupLine($"[green]#{index.ToInvariant()} {domain.Domain}[/] → Marked legitimate");
                 stats.DomainsLegitimate++;
             }
             else
             {
                 // Add to spam blocklist
-                this.storageService.AddSpamDomain(domain.Domain, "Confirmed spam by user review");
-                AnsiConsole.MarkupLine($"[red]#{index} {domain.Domain}[/] → Added to blocklist");
+                _ = this.storageService.AddSpamDomain(domain.Domain, "Confirmed spam by user review");
+                AnsiConsole.MarkupLine($"[red]#{index.ToInvariant()} {domain.Domain}[/] → Added to blocklist");
                 stats.DomainsBlocked++;
             }
 
@@ -288,7 +290,7 @@ internal sealed class SpamReviewAgent(SpamFilterSettings settings) : IDisposable
         }
 
         // Remove processed domains from review queue
-        this.humanReviewService.RemoveDomains(domainsToRemove);
+        _ = this.humanReviewService.RemoveDomains(domainsToRemove);
     }
 
     private sealed class ReviewStats

@@ -46,7 +46,7 @@ internal sealed class OpenRouterModelService : IDisposable
         {
             var response = await this.httpClient.GetFromJsonAsync<ModelsResponse>(this.modelsApiUri).ConfigureAwait(false);
 
-            this.Info = response?.Data?.FirstOrDefault(m =>
+            this.Info = response?.Data?.Find(m =>
                 string.Equals(m.Id, this.modelId, StringComparison.OrdinalIgnoreCase));
 
             return this.Info;

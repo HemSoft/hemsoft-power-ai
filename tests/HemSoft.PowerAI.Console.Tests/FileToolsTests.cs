@@ -19,7 +19,7 @@ public sealed class FileToolsTests : IDisposable
     public FileToolsTests()
     {
         this.testDir = Path.Combine(Path.GetTempPath(), $"FileToolsTests_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(this.testDir);
+        _ = Directory.CreateDirectory(this.testDir);
     }
 
     /// <inheritdoc/>
@@ -208,7 +208,7 @@ public sealed class FileToolsTests : IDisposable
     {
         // Arrange
         var dirPath = Path.Combine(this.testDir, "todelete");
-        Directory.CreateDirectory(dirPath);
+        _ = Directory.CreateDirectory(dirPath);
 
         // Act
         var result = FileTools.ModifyFileSystem("delete", dirPath);
@@ -318,7 +318,7 @@ public sealed class FileToolsTests : IDisposable
     {
         // Arrange
         var sourceDir = Path.Combine(this.testDir, "sourcedir");
-        Directory.CreateDirectory(sourceDir);
+        _ = Directory.CreateDirectory(sourceDir);
 
         // Act
         var result = FileTools.ModifyFileSystem("copy", sourceDir, "dest");
@@ -349,7 +349,7 @@ public sealed class FileToolsTests : IDisposable
         // Arrange
         var sourceDir = Path.Combine(this.testDir, "sourcedir");
         var destDir = Path.Combine(this.testDir, "destdir");
-        Directory.CreateDirectory(sourceDir);
+        _ = Directory.CreateDirectory(sourceDir);
 
         // Act
         var result = FileTools.ModifyFileSystem("move", sourceDir, destDir);
@@ -404,10 +404,10 @@ public sealed class FileToolsTests : IDisposable
     public void ModifyFileSystemDeleteInvalidPath()
     {
         // Arrange - use path that will cause IO error on some systems
-        var invalidPath = "CON"; // Reserved Windows device name
+        const string InvalidPath = "CON"; // Reserved Windows device name
 
         // Act
-        var result = FileTools.ModifyFileSystem("delete", invalidPath);
+        var result = FileTools.ModifyFileSystem("delete", InvalidPath);
 
         // Assert - should return "Not found" since reserved names don't exist as files
         Assert.Contains("Not found", result, StringComparison.Ordinal);
@@ -450,5 +450,159 @@ public sealed class FileToolsTests : IDisposable
 
         // Assert
         Assert.Equal("Error copying /test/path: disk full", result);
+    }
+
+    /// <summary>
+    /// Verifies QueryFileSystem read mode returns file contents.
+    /// </summary>
+    [Fact]
+    public void QueryFileSystemReadReturnsContents()
+    {
+        // Arrange
+        var filePath = Path.Combine(this.testDir, "read.txt");
+        const string Content = "Hello, World!";
+        File.WriteAllText(filePath, Content);
+
+        // Act
+        var result = FileTools.QueryFileSystem("read", filePath);
+
+        // Assert
+        Assert.Equal(Content, result);
+    }
+
+    /// <summary>
+    /// Verifies QueryFileSystem read mode handles non-existent file.
+    /// </summary>
+    [Fact]
+    public void QueryFileSystemReadNonExistentFile()
+    {
+        // Act
+        var result = FileTools.QueryFileSystem("read", Path.Combine(this.testDir, "nonexistent.txt"));
+
+        // Assert
+        Assert.Contains("not found", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Verifies QueryFileSystem read mode returns empty file message.
+    /// </summary>
+    [Fact]
+    public void QueryFileSystemReadEmptyFile()
+    {
+        // Arrange
+        var filePath = Path.Combine(this.testDir, "empty.txt");
+        File.WriteAllText(filePath, string.Empty);
+
+        // Act
+        var result = FileTools.QueryFileSystem("read", filePath);
+
+        // Assert
+        Assert.Equal("[Empty file]", result);
+    }
+
+    /// <summary>
+    /// Verifies QueryFileSystem read mode truncates large files.
+    /// </summary>
+    [Fact]
+    public void QueryFileSystemReadTruncatesLargeFile()
+    {
+        // Arrange
+        var filePath = Path.Combine(this.testDir, "large.txt");
+        var largeContent = new string('x', 15000);
+        File.WriteAllText(filePath, largeContent);
+
+        // Act
+        var result = FileTools.QueryFileSystem("read", filePath);
+
+        // Assert
+        Assert.Contains("[Truncated", result, StringComparison.Ordinal);
+        Assert.Contains("15,000 characters", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem write creates new file.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemWriteCreatesFile()
+    {
+        // Arrange
+        var filePath = Path.Combine(this.testDir, "newfile.txt");
+        const string Content = "Test content";
+
+        // Act
+        var result = FileTools.ModifyFileSystem("write", filePath, Content);
+
+        // Assert
+        Assert.Contains("Written", result, StringComparison.Ordinal);
+        Assert.Contains("12", result, StringComparison.Ordinal); // 12 characters
+        Assert.True(File.Exists(filePath));
+        Assert.Equal(Content, File.ReadAllText(filePath));
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem write overwrites existing file.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemWriteOverwritesFile()
+    {
+        // Arrange
+        var filePath = Path.Combine(this.testDir, "existing.txt");
+        File.WriteAllText(filePath, "old content");
+        const string NewContent = "new content";
+
+        // Act
+        var result = FileTools.ModifyFileSystem("write", filePath, NewContent);
+
+        // Assert
+        Assert.Contains("Written", result, StringComparison.Ordinal);
+        Assert.Equal(NewContent, File.ReadAllText(filePath));
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem write creates parent directories.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemWriteCreatesParentDirectories()
+    {
+        // Arrange
+        var filePath = Path.Combine(this.testDir, "subdir1", "subdir2", "file.txt");
+        const string Content = "nested content";
+
+        // Act
+        var result = FileTools.ModifyFileSystem("write", filePath, Content);
+
+        // Assert
+        Assert.Contains("Written", result, StringComparison.Ordinal);
+        Assert.True(File.Exists(filePath));
+        Assert.Equal(Content, File.ReadAllText(filePath));
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem write requires content.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemWriteRequiresContent()
+    {
+        // Act
+        var result = FileTools.ModifyFileSystem("write", Path.Combine(this.testDir, "file.txt"));
+
+        // Assert
+        Assert.Contains("Content required", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies ModifyFileSystem write handles invalid path.
+    /// </summary>
+    [Fact]
+    public void ModifyFileSystemWriteInvalidPath()
+    {
+        // Arrange
+        var invalidPath = Path.Combine(this.testDir, "invalid<>:\"|?*file.txt");
+
+        // Act
+        var result = FileTools.ModifyFileSystem("write", invalidPath, "content");
+
+        // Assert
+        Assert.Contains("Error writing", result, StringComparison.Ordinal);
     }
 }

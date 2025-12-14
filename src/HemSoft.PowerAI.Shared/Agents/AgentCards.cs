@@ -1,0 +1,132 @@
+// <copyright file="AgentCards.cs" company="HemSoft">
+// Copyright © 2025 HemSoft
+// </copyright>
+
+namespace HemSoft.PowerAI.Common.Agents;
+
+using A2A;
+
+/// <summary>
+/// Provides A2A Agent Cards for exposing agents via the A2A protocol.
+/// Agent Cards describe agent capabilities for discovery and interoperability.
+/// </summary>
+public static class AgentCards
+{
+    private const string ProtocolVersion = "0.3.0";
+    private const string TextPlainMimeType = "text/plain";
+
+    private const string ResearchAgentDescription =
+        "Web research specialist that searches and synthesizes findings into actionable insights with sources.";
+
+    private const string WebResearchSkillDescription =
+        "Searches web for information and creates structured summaries with findings, sources, and recommendations.";
+
+    private const string CoordinatorDescription =
+        "Orchestrator that breaks down complex tasks and delegates to specialized agents for research and files.";
+
+    private const string OrchestrationSkillDescription =
+        "Analyzes complex requests, creates subtasks, and delegates to specialized agents like ResearchAgent.";
+
+    private const string FileOperationsDescription =
+        "Read, write, and manage files and directories. Save research results and organize file structures.";
+
+    /// <summary>
+    /// Gets the AgentCard for the ResearchAgent.
+    /// </summary>
+    /// <param name="baseUrl">The base URL where the agent is hosted.</param>
+    /// <returns>An AgentCard describing the ResearchAgent.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when baseUrl is null.</exception>
+    public static AgentCard CreateResearchAgentCard(Uri baseUrl)
+    {
+        ArgumentNullException.ThrowIfNull(baseUrl);
+
+        return new AgentCard
+        {
+            Name = "ResearchAgent",
+            Description = ResearchAgentDescription,
+            Url = baseUrl.ToString(),
+            Version = "1.0.0",
+            ProtocolVersion = ProtocolVersion,
+            DefaultInputModes = [TextPlainMimeType],
+            DefaultOutputModes = [TextPlainMimeType],
+            Capabilities = new AgentCapabilities
+            {
+                Streaming = false,
+                PushNotifications = false,
+                StateTransitionHistory = false,
+            },
+            Skills =
+            [
+                new AgentSkill
+                {
+                    Id = "web-research",
+                    Name = "Web Research",
+                    Description = WebResearchSkillDescription,
+                    Tags = ["search", "web", "research", "information", "synthesis"],
+                    Examples =
+                    [
+                        "Research the latest AI developments in 2025",
+                        "Find information about Microsoft Agent Framework",
+                        "Search for best practices in distributed systems",
+                    ],
+                },
+            ],
+        };
+    }
+
+    /// <summary>
+    /// Gets the AgentCard for the CoordinatorAgent.
+    /// </summary>
+    /// <param name="baseUrl">The base URL where the agent is hosted.</param>
+    /// <returns>An AgentCard describing the CoordinatorAgent.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when baseUrl is null.</exception>
+    public static AgentCard CreateCoordinatorAgentCard(Uri baseUrl)
+    {
+        ArgumentNullException.ThrowIfNull(baseUrl);
+
+        return new AgentCard
+        {
+            Name = "CoordinatorAgent",
+            Description = CoordinatorDescription,
+            Url = baseUrl.ToString(),
+            Version = "1.0.0",
+            ProtocolVersion = ProtocolVersion,
+            DefaultInputModes = [TextPlainMimeType],
+            DefaultOutputModes = [TextPlainMimeType],
+            Capabilities = new AgentCapabilities
+            {
+                Streaming = false,
+                PushNotifications = false,
+                StateTransitionHistory = false,
+            },
+            Skills =
+            [
+                new AgentSkill
+                {
+                    Id = "task-orchestration",
+                    Name = "Task Orchestration",
+                    Description = OrchestrationSkillDescription,
+                    Tags = ["orchestration", "delegation", "coordination", "planning"],
+                    Examples =
+                    [
+                        "Research AI trends and save a report to research-report.md",
+                        "Find information about distributed systems and summarize",
+                    ],
+                },
+                new AgentSkill
+                {
+                    Id = "file-operations",
+                    Name = "File Operations",
+                    Description = FileOperationsDescription,
+                    Tags = ["files", "filesystem", "read", "write", "organize"],
+                    Examples =
+                    [
+                        "Save this report to output/report.md",
+                        "Read the contents of README.md",
+                        "List all files in the docs folder",
+                    ],
+                },
+            ],
+        };
+    }
+}

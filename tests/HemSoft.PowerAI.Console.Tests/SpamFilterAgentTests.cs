@@ -24,7 +24,7 @@ public class SpamFilterAgentTests : IDisposable
     public SpamFilterAgentTests()
     {
         this.testDirectory = Path.Combine(Path.GetTempPath(), "SpamFilterAgentTests_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this.testDirectory);
+        _ = Directory.CreateDirectory(this.testDirectory);
 
         this.settings = new SpamFilterSettings
         {
@@ -156,7 +156,7 @@ public class SpamFilterAgentTests : IDisposable
         Assert.NotNull(method);
 
         // Act - use named groups to match the updated implementation
-        var result = method.Invoke(null, ["5 EMAILS PROCESSED", @"(?<num1>\d+)\s*(?:EMAILS?\s*)?PROCESSED|PROCESSED\s*(?<num2>\d+)"]);
+        var result = method.Invoke(obj: null, ["5 EMAILS PROCESSED", @"(?<num1>\d+)\s*(?:EMAILS?\s*)?PROCESSED|PROCESSED\s*(?<num2>\d+)"]);
 
         // Assert
         Assert.Equal(5, result);
@@ -175,7 +175,7 @@ public class SpamFilterAgentTests : IDisposable
         Assert.NotNull(method);
 
         // Act - use named group to match the updated implementation
-        var result = method.Invoke(null, ["no numbers here", @"(?<num1>\d+)"]);
+        var result = method.Invoke(obj: null, ["no numbers here", @"(?<num1>\d+)"]);
 
         // Assert
         Assert.Equal(0, result);
@@ -272,7 +272,7 @@ public class SpamFilterAgentTests : IDisposable
         batchResultType.GetProperty("EmailsProcessed")?.SetValue(instance, 15);
         batchResultType.GetProperty("MovedToJunk")?.SetValue(instance, 5);
         batchResultType.GetProperty("CandidatesRecorded")?.SetValue(instance, 3);
-        batchResultType.GetProperty("InboxWasEmpty")?.SetValue(instance, true);
+        batchResultType.GetProperty("InboxWasEmpty")?.SetValue(instance, value: true);
 
         // Assert
         Assert.Equal(15, batchResultType.GetProperty("EmailsProcessed")?.GetValue(instance));
@@ -331,7 +331,7 @@ public class SpamFilterAgentTests : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        this.Dispose(true);
+        this.Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -352,7 +352,7 @@ public class SpamFilterAgentTests : IDisposable
             {
                 if (Directory.Exists(this.testDirectory))
                 {
-                    Directory.Delete(this.testDirectory, true);
+                    Directory.Delete(this.testDirectory, recursive: true);
                 }
             }
             catch (IOException)
@@ -371,7 +371,7 @@ public class SpamFilterAgentTests : IDisposable
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
 
-        var result = method.Invoke(null, [responseText]);
+        var result = method.Invoke(obj: null, [responseText]);
         Assert.NotNull(result);
 
         return result;

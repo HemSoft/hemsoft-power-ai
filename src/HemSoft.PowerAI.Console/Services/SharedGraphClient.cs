@@ -127,7 +127,7 @@ internal sealed class SharedGraphClient : IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "HemSoft.PowerAI");
 
-        Directory.CreateDirectory(cacheDir);
+        _ = Directory.CreateDirectory(cacheDir);
 
         var storageProperties = new StorageCreationPropertiesBuilder(CacheFileName, cacheDir)
             .WithUnprotectedFile() // Cross-platform compatible, uses ACL protection on Windows
@@ -152,6 +152,8 @@ internal sealed class SharedGraphClient : IDisposable
     /// <summary>
     /// Custom token provider that uses MSAL for authentication with persistent caching.
     /// </summary>
+    /// <param name="msalClient">The MSAL public client application.</param>
+    /// <param name="scopes">The default OAuth scopes to request.</param>
     private sealed class MsalTokenProvider(IPublicClientApplication msalClient, string[] scopes)
         : Azure.Core.TokenCredential
     {

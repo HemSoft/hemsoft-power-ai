@@ -7,6 +7,7 @@ namespace HemSoft.PowerAI.Console.Tools;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text;
 
 /// <summary>
@@ -83,9 +84,9 @@ internal static class TerminalTools
 
         foreach (var cmd in commandList)
         {
-            results.Append(">>> ").AppendLine(cmd);
+            _ = results.Append(">>> ").AppendLine(cmd);
             var result = Terminal(cmd, workingDirectory);
-            results.AppendLine(result);
+            _ = results.AppendLine(result);
 
             var failed = result.Contains("Exit: ", StringComparison.Ordinal) && !result.Contains("Exit: 0", StringComparison.Ordinal);
             if (failed)
@@ -93,13 +94,14 @@ internal static class TerminalTools
                 allSucceeded = false;
                 if (!continueOnError)
                 {
-                    results.AppendLine("Batch stopped due to failure. Use continueOnError=true to run all commands.");
-                    break;
+                    _ = results.AppendLine("Batch stopped due to failure. Use continueOnError=true to run all commands.");
+                    _ = results.Append("Batch complete. Success: ").Append(allSucceeded).AppendLine();
+                    return results.ToString();
                 }
             }
         }
 
-        results.Append("Batch complete. Success: ").Append(allSucceeded).AppendLine();
+        _ = results.Append("Batch complete. Success: ").Append(allSucceeded).AppendLine();
         return results.ToString();
     }
 
@@ -143,7 +145,11 @@ internal static class TerminalTools
                 }
             };
 
-            process.Start();
+            if (!process.Start())
+            {
+                return "Error: Failed to start process";
+            }
+
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
@@ -152,7 +158,8 @@ internal static class TerminalTools
             if (!completed)
             {
                 process.Kill(entireProcessTree: true);
-                return $"Error: Command timed out after {timeoutMs / 1000}s\nPartial output:\n{output}";
+                var timeoutSec = (timeoutMs / 1000).ToString(CultureInfo.InvariantCulture);
+                return $"Error: Command timed out after {timeoutSec}s\nPartial output:\n{output}";
             }
 
             return FormatResult(output.ToString(), error.ToString(), process.ExitCode);
@@ -169,15 +176,15 @@ internal static class TerminalTools
 
         if (!string.IsNullOrWhiteSpace(stdout))
         {
-            result.AppendLine(stdout.TrimEnd());
+            _ = result.AppendLine(stdout.TrimEnd());
         }
 
         if (!string.IsNullOrWhiteSpace(stderr))
         {
-            result.Append("[stderr] ").AppendLine(stderr.TrimEnd());
+            _ = result.Append("[stderr] ").AppendLine(stderr.TrimEnd());
         }
 
-        result.Append("Exit: ").Append(exitCode).AppendLine();
+        _ = result.Append("Exit: ").Append(exitCode).AppendLine();
 
         return result.ToString();
     }

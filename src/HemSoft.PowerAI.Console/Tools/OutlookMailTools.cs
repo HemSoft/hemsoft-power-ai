@@ -13,6 +13,7 @@ using System.Text.Json;
 using Azure.Identity;
 
 using HemSoft.PowerAI.Console.Configuration;
+using HemSoft.PowerAI.Console.Extensions;
 using HemSoft.PowerAI.Console.Services;
 
 using Microsoft.Graph;
@@ -29,7 +30,12 @@ internal static class OutlookMailTools
 {
     private const string AuthError = "authentication";
     private const int DefaultMaxResults = 10;
-    private const int BatchSize = 20; // Graph API max per batch request
+
+    /// <summary>
+    /// Graph API max per batch request.
+    /// </summary>
+    private const int BatchSize = 20;
+
     private const int MaxRetries = 3;
     private const int BaseDelayMs = 1000;
     private const int SearchTimeoutSeconds = 120;
@@ -162,7 +168,7 @@ internal static class OutlookMailTools
             var total = folderInfo.TotalItemCount ?? 0;
             var unread = folderInfo.UnreadItemCount ?? 0;
 
-            return $"{displayName}: {total:N0} emails ({unread:N0} unread)";
+            return $"{displayName}: {total.ToInvariant()} emails ({unread.ToInvariant()} unread)";
         }
         catch (ODataError ex)
         {
@@ -387,7 +393,7 @@ internal static class OutlookMailTools
             // Fall back to folder-scoped path if root fails
             try
             {
-                await client.Me.Messages[messageId].Move.PostAsync(
+                _ = await client.Me.Messages[messageId].Move.PostAsync(
                     new Microsoft.Graph.Me.Messages.Item.Move.MovePostRequestBody
                     {
                         DestinationId = destination,
@@ -397,7 +403,7 @@ internal static class OutlookMailTools
             catch (ODataError)
             {
                 // Message might need folder-specific path, try inbox
-                await client.Me.MailFolders[FolderInbox].Messages[messageId].Move.PostAsync(
+                _ = await client.Me.MailFolders[FolderInbox].Messages[messageId].Move.PostAsync(
                     new Microsoft.Graph.Me.MailFolders.Item.Messages.Item.Move.MovePostRequestBody
                     {
                         DestinationId = destination,
@@ -424,7 +430,7 @@ internal static class OutlookMailTools
         var sb = new StringBuilder();
         if (folderName is not null)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"[{folderName}] ").AppendLine();
+            _ = sb.Append(CultureInfo.InvariantCulture, $"[{folderName}] ").AppendLine();
         }
 
         var index = 1;
@@ -433,9 +439,9 @@ internal static class OutlookMailTools
             var read = msg.IsRead == true ? "✓" : "●";
             var from = msg.From?.EmailAddress?.Address ?? "Unknown";
             var date = msg.ReceivedDateTime?.ToString("g", CultureInfo.InvariantCulture) ?? "Unknown";
-            sb.Append(CultureInfo.InvariantCulture, $"{index}. {read} {date} | {from}").AppendLine();
-            sb.Append(CultureInfo.InvariantCulture, $"   {msg.Subject}").AppendLine();
-            sb.Append(CultureInfo.InvariantCulture, $"   ID: {msg.Id}").AppendLine();
+            _ = sb.Append(CultureInfo.InvariantCulture, $"{index}. {read} {date} | {from}").AppendLine();
+            _ = sb.Append(CultureInfo.InvariantCulture, $"   {msg.Subject}").AppendLine();
+            _ = sb.Append(CultureInfo.InvariantCulture, $"   ID: {msg.Id}").AppendLine();
             index++;
         }
 
@@ -445,13 +451,13 @@ internal static class OutlookMailTools
     private static string FormatFullMessage(Message msg)
     {
         var sb = new StringBuilder();
-        sb.Append(CultureInfo.InvariantCulture, $"Subject: {msg.Subject}").AppendLine();
-        sb.Append(CultureInfo.InvariantCulture, $"From: {msg.From?.EmailAddress?.Address}").AppendLine();
-        sb.Append(CultureInfo.InvariantCulture, $"Date: {msg.ReceivedDateTime?.ToString("g", CultureInfo.InvariantCulture)}").AppendLine();
         var toAddresses = string.Join(", ", msg.ToRecipients?.Select(r => r.EmailAddress?.Address) ?? []);
-        sb.Append(CultureInfo.InvariantCulture, $"To: {toAddresses}").AppendLine();
-        sb.AppendLine();
-        sb.AppendLine(msg.Body?.Content ?? "(No content)");
+        _ = sb.Append(CultureInfo.InvariantCulture, $"Subject: {msg.Subject}").AppendLine()
+            .Append(CultureInfo.InvariantCulture, $"From: {msg.From?.EmailAddress?.Address}").AppendLine()
+            .Append(CultureInfo.InvariantCulture, $"Date: {msg.ReceivedDateTime?.ToString("g", CultureInfo.InvariantCulture)}").AppendLine()
+            .Append(CultureInfo.InvariantCulture, $"To: {toAddresses}").AppendLine()
+            .AppendLine()
+            .AppendLine(msg.Body?.Content ?? "(No content)");
         return sb.ToString().TrimEnd();
     }
 
@@ -539,16 +545,16 @@ internal static class OutlookMailTools
 
     private static string FormatBatchResult(int total, int deleted, int failed, int retryCount)
     {
-        var result = $"Deleted {deleted}/{total} emails";
+        var result = $"Deleted {deleted.ToInvariant()}/{total.ToInvariant()} emails";
 
         if (failed > 0)
         {
-            result += $" ({failed} failed)";
+            result += $" ({failed.ToInvariant()} failed)";
         }
 
         if (retryCount > 0)
         {
-            result += $" [retried {retryCount}x due to rate limits]";
+            result += $" [retried {retryCount.ToInvariant()}x due to rate limits]";
         }
 
         return result;

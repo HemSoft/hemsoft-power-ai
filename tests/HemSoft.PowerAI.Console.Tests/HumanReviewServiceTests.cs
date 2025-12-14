@@ -23,7 +23,7 @@ public class HumanReviewServiceTests : IDisposable
     public HumanReviewServiceTests()
     {
         this.testDirectory = Path.Combine(Path.GetTempPath(), "HumanReviewServiceTests_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this.testDirectory);
+        _ = Directory.CreateDirectory(this.testDirectory);
 
         this.settings = new SpamFilterSettings
         {
@@ -80,10 +80,10 @@ public class HumanReviewServiceTests : IDisposable
         // Assert
         Assert.True(result);
         var domains = this.sut.GetPendingDomains();
-        Assert.Single(domains);
+        _ = Assert.Single(domains);
         Assert.Equal("SPAM.EXAMPLE.COM", domains[0].Domain);
         Assert.Equal(1, domains[0].EmailCount);
-        Assert.Single(domains[0].Samples);
+        _ = Assert.Single(domains[0].Samples);
         Assert.Equal(messageId, domains[0].Samples[0].MessageId);
     }
 
@@ -95,7 +95,7 @@ public class HumanReviewServiceTests : IDisposable
     {
         // Arrange
         const string domain = "spam.example.com";
-        this.sut.AddOrUpdateDomain(domain, "msg1", "a@spam.example.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain(domain, "msg1", "a@spam.example.com", "Subject 1", "Reason 1");
 
         // Act
         var result = this.sut.AddOrUpdateDomain(domain, "msg2", "b@spam.example.com", "Subject 2", "Reason 2");
@@ -103,7 +103,7 @@ public class HumanReviewServiceTests : IDisposable
         // Assert
         Assert.False(result);
         var domains = this.sut.GetPendingDomains();
-        Assert.Single(domains);
+        _ = Assert.Single(domains);
         Assert.Equal(2, domains[0].EmailCount);
         Assert.Equal(2, domains[0].Samples.Count);
     }
@@ -116,15 +116,15 @@ public class HumanReviewServiceTests : IDisposable
     {
         // Arrange
         const string domain = "spam.example.com";
-        this.sut.AddOrUpdateDomain(domain, "msg1", "a@spam.example.com", "Subject 1", "Reason 1");
-        this.sut.AddOrUpdateDomain(domain, "msg2", "b@spam.example.com", "Subject 2", "Reason 2");
+        _ = this.sut.AddOrUpdateDomain(domain, "msg1", "a@spam.example.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain(domain, "msg2", "b@spam.example.com", "Subject 2", "Reason 2");
 
         // Act - add a third message
-        this.sut.AddOrUpdateDomain(domain, "msg3", "c@spam.example.com", "Subject 3", "Reason 3");
+        _ = this.sut.AddOrUpdateDomain(domain, "msg3", "c@spam.example.com", "Subject 3", "Reason 3");
 
         // Assert - should still only have 2 samples but count 3
         var domains = this.sut.GetPendingDomains();
-        Assert.Single(domains);
+        _ = Assert.Single(domains);
         Assert.Equal(3, domains[0].EmailCount);
         Assert.Equal(2, domains[0].Samples.Count);
     }
@@ -138,16 +138,16 @@ public class HumanReviewServiceTests : IDisposable
         // Arrange
         const string domain = "spam.example.com";
         const string messageId = "msg1";
-        this.sut.AddOrUpdateDomain(domain, messageId, "a@spam.example.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain(domain, messageId, "a@spam.example.com", "Subject 1", "Reason 1");
 
         // Act - add same message ID again
-        this.sut.AddOrUpdateDomain(domain, messageId, "a@spam.example.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain(domain, messageId, "a@spam.example.com", "Subject 1", "Reason 1");
 
         // Assert - should have 2 email count but only 1 sample
         var domains = this.sut.GetPendingDomains();
-        Assert.Single(domains);
+        _ = Assert.Single(domains);
         Assert.Equal(2, domains[0].EmailCount);
-        Assert.Single(domains[0].Samples);
+        _ = Assert.Single(domains[0].Samples);
     }
 
     /// <summary>
@@ -158,7 +158,7 @@ public class HumanReviewServiceTests : IDisposable
     {
         // Arrange
         const string domain = "spam.example.com";
-        this.sut.AddOrUpdateDomain(domain, "msg1", "a@spam.example.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain(domain, "msg1", "a@spam.example.com", "Subject 1", "Reason 1");
 
         // Act
         var removed = this.sut.RemoveDomain(domain);
@@ -189,9 +189,9 @@ public class HumanReviewServiceTests : IDisposable
     public void RemoveDomainsRemovesMultipleDomainsAndReturnsCount()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
-        this.sut.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
-        this.sut.AddOrUpdateDomain("domain3.com", "msg3", "a@domain3.com", "Subject 3", "Reason 3");
+        _ = this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
+        _ = this.sut.AddOrUpdateDomain("domain3.com", "msg3", "a@domain3.com", "Subject 3", "Reason 3");
 
         // Act
         var removedCount = this.sut.RemoveDomains(["domain1.com", "domain3.com"]);
@@ -199,7 +199,7 @@ public class HumanReviewServiceTests : IDisposable
         // Assert
         Assert.Equal(2, removedCount);
         var remaining = this.sut.GetPendingDomains();
-        Assert.Single(remaining);
+        _ = Assert.Single(remaining);
         Assert.Equal("DOMAIN2.COM", remaining[0].Domain);
     }
 
@@ -210,14 +210,14 @@ public class HumanReviewServiceTests : IDisposable
     public void RemoveDomainsReturnsZeroWhenNoMatchingDomains()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
 
         // Act
         var removedCount = this.sut.RemoveDomains(["nonexistent.com"]);
 
         // Assert
         Assert.Equal(0, removedCount);
-        Assert.Single(this.sut.GetPendingDomains());
+        _ = Assert.Single(this.sut.GetPendingDomains());
     }
 
     /// <summary>
@@ -227,8 +227,8 @@ public class HumanReviewServiceTests : IDisposable
     public void ClearAllRemovesAllDomains()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
-        this.sut.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
+        _ = this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
 
         // Act
         this.sut.ClearAll();
@@ -245,7 +245,7 @@ public class HumanReviewServiceTests : IDisposable
     public void IsPendingReviewReturnsTrueForPendingDomain()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("spam.com", "msg1", "a@spam.com", "Subject", "Reason");
+        _ = this.sut.AddOrUpdateDomain("spam.com", "msg1", "a@spam.com", "Subject", "Reason");
 
         // Act - test case-insensitivity
         var result = this.sut.IsPendingReview("SPAM.COM");
@@ -296,14 +296,14 @@ public class HumanReviewServiceTests : IDisposable
     public void AddOrUpdateDomainIsCaseInsensitiveForDomainMatching()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("SPAM.COM", "msg1", "a@spam.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain("SPAM.COM", "msg1", "a@spam.com", "Subject 1", "Reason 1");
 
         // Act - add with different case
         var result = this.sut.AddOrUpdateDomain("spam.com", "msg2", "b@spam.com", "Subject 2", "Reason 2");
 
         // Assert - should update existing, not create new
         Assert.False(result);
-        Assert.Single(this.sut.GetPendingDomains());
+        _ = Assert.Single(this.sut.GetPendingDomains());
     }
 
     /// <summary>
@@ -313,10 +313,10 @@ public class HumanReviewServiceTests : IDisposable
     public void GetPendingCountReturnsCorrectCountAfterOperations()
     {
         // Arrange & Act
-        this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
-        this.sut.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
-        this.sut.AddOrUpdateDomain("domain3.com", "msg3", "a@domain3.com", "Subject 3", "Reason 3");
-        this.sut.RemoveDomain("domain2.com");
+        _ = this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
+        _ = this.sut.AddOrUpdateDomain("domain3.com", "msg3", "a@domain3.com", "Subject 3", "Reason 3");
+        _ = this.sut.RemoveDomain("domain2.com");
 
         // Assert
         Assert.Equal(2, this.sut.GetPendingCount());
@@ -330,17 +330,17 @@ public class HumanReviewServiceTests : IDisposable
     {
         // Arrange
         const string domain = "timestamp.com";
-        var beforeFirstAdd = DateTime.UtcNow;
+        var beforeFirstAdd = DateTimeOffset.UtcNow;
 
         // Act - first add
-        this.sut.AddOrUpdateDomain(domain, "msg1", "a@timestamp.com", "Subject 1", "Reason 1");
-        var afterFirstAdd = DateTime.UtcNow;
+        _ = this.sut.AddOrUpdateDomain(domain, "msg1", "a@timestamp.com", "Subject 1", "Reason 1");
+        var afterFirstAdd = DateTimeOffset.UtcNow;
 
         var domainsAfterFirst = this.sut.GetPendingDomains();
         var firstSeen = domainsAfterFirst[0].FirstSeen;
 
         // Act - second add
-        this.sut.AddOrUpdateDomain(domain, "msg2", "b@timestamp.com", "Subject 2", "Reason 2");
+        _ = this.sut.AddOrUpdateDomain(domain, "msg2", "b@timestamp.com", "Subject 2", "Reason 2");
         var domainsAfterSecond = this.sut.GetPendingDomains();
         var lastSeenAfterSecond = domainsAfterSecond[0].LastSeen;
 
@@ -358,14 +358,14 @@ public class HumanReviewServiceTests : IDisposable
     public void RemoveDomainsHandlesEmptyList()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
 
         // Act
         var removedCount = this.sut.RemoveDomains([]);
 
         // Assert
         Assert.Equal(0, removedCount);
-        Assert.Single(this.sut.GetPendingDomains());
+        _ = Assert.Single(this.sut.GetPendingDomains());
     }
 
     /// <summary>
@@ -394,7 +394,7 @@ public class HumanReviewServiceTests : IDisposable
     public void IsPendingReviewIsCaseInsensitive()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("SpAm.CoM", "msg1", "a@spam.com", "Subject", "Reason");
+        _ = this.sut.AddOrUpdateDomain("SpAm.CoM", "msg1", "a@spam.com", "Subject", "Reason");
 
         // Act & Assert - all case variations should return true
         Assert.True(this.sut.IsPendingReview("spam.com"));
@@ -409,7 +409,7 @@ public class HumanReviewServiceTests : IDisposable
     public void RemoveDomainIsCaseInsensitive()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("SPAM.COM", "msg1", "a@spam.com", "Subject", "Reason");
+        _ = this.sut.AddOrUpdateDomain("SPAM.COM", "msg1", "a@spam.com", "Subject", "Reason");
 
         // Act - remove with different case
         var removed = this.sut.RemoveDomain("spam.com");
@@ -433,11 +433,11 @@ public class HumanReviewServiceTests : IDisposable
         const string reason = "Test Reason";
 
         // Act
-        this.sut.AddOrUpdateDomain(domain, messageId, senderEmail, subject, reason);
+        _ = this.sut.AddOrUpdateDomain(domain, messageId, senderEmail, subject, reason);
 
         // Assert
         var domains = this.sut.GetPendingDomains();
-        Assert.Single(domains);
+        _ = Assert.Single(domains);
         var sample = domains[0].Samples[0];
         Assert.Equal(messageId, sample.MessageId);
         Assert.Equal(senderEmail, sample.Sender);
@@ -452,9 +452,9 @@ public class HumanReviewServiceTests : IDisposable
     public void MultipleDomainsCanBeAddedAndRetrievedIndependently()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
-        this.sut.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
-        this.sut.AddOrUpdateDomain("domain3.com", "msg3", "a@domain3.com", "Subject 3", "Reason 3");
+        _ = this.sut.AddOrUpdateDomain("domain1.com", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain("domain2.com", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
+        _ = this.sut.AddOrUpdateDomain("domain3.com", "msg3", "a@domain3.com", "Subject 3", "Reason 3");
 
         // Act
         var domains = this.sut.GetPendingDomains();
@@ -473,8 +473,8 @@ public class HumanReviewServiceTests : IDisposable
     public void RemoveDomainsIsCaseInsensitive()
     {
         // Arrange
-        this.sut.AddOrUpdateDomain("DOMAIN1.COM", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
-        this.sut.AddOrUpdateDomain("DOMAIN2.COM", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
+        _ = this.sut.AddOrUpdateDomain("DOMAIN1.COM", "msg1", "a@domain1.com", "Subject 1", "Reason 1");
+        _ = this.sut.AddOrUpdateDomain("DOMAIN2.COM", "msg2", "a@domain2.com", "Subject 2", "Reason 2");
 
         // Act - remove with different case
         var removedCount = this.sut.RemoveDomains(["domain1.com", "domain2.com"]);
@@ -487,7 +487,7 @@ public class HumanReviewServiceTests : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        this.Dispose(true);
+        this.Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -508,7 +508,7 @@ public class HumanReviewServiceTests : IDisposable
             {
                 if (Directory.Exists(this.testDirectory))
                 {
-                    Directory.Delete(this.testDirectory, true);
+                    Directory.Delete(this.testDirectory, recursive: true);
                 }
             }
             catch (IOException)

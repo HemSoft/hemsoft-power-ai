@@ -27,6 +27,7 @@ internal sealed class SpamStorageService
     private readonly string dataDirectory;
     private readonly string spamDomainsPath;
     private readonly string spamCandidatesPath;
+    private readonly TimeProvider timeProvider;
     private readonly Lock lockObject = new();
 
     /// <summary>
@@ -35,7 +36,7 @@ internal sealed class SpamStorageService
     /// </summary>
     /// <param name="settings">The spam filter settings.</param>
     public SpamStorageService(SpamFilterSettings settings)
-        : this(settings, DefaultAppDataDir)
+        : this(settings, DefaultAppDataDir, TimeProvider.System)
     {
     }
 
@@ -45,9 +46,11 @@ internal sealed class SpamStorageService
     /// </summary>
     /// <param name="settings">The spam filter settings.</param>
     /// <param name="dataDirectory">The directory to store data files in.</param>
-    internal SpamStorageService(SpamFilterSettings settings, string dataDirectory)
+    /// <param name="timeProvider">The time provider to use. Defaults to system time.</param>
+    internal SpamStorageService(SpamFilterSettings settings, string dataDirectory, TimeProvider? timeProvider = null)
     {
         this.dataDirectory = dataDirectory;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         this.spamDomainsPath = Path.Combine(dataDirectory, Path.GetFileName(settings.SpamDomainsFilePath));
         this.spamCandidatesPath = Path.Combine(dataDirectory, Path.GetFileName(settings.SpamCandidatesFilePath));
 
@@ -100,7 +103,7 @@ internal sealed class SpamStorageService
             file.Domains.Add(new SpamDomain
             {
                 Domain = domain.ToUpperInvariant(),
-                AddedAt = DateTime.UtcNow,
+                AddedAt = this.timeProvider.GetUtcNow(),
                 Reason = reason,
             });
 
@@ -164,7 +167,7 @@ internal sealed class SpamStorageService
             {
                 foreach (var item in toRemove)
                 {
-                    file.Candidates.Remove(item);
+                    _ = file.Candidates.Remove(item);
                 }
 
                 File.WriteAllText(this.spamCandidatesPath, JsonSerializer.Serialize(file, JsonOptions));
@@ -203,7 +206,7 @@ internal sealed class SpamStorageService
     {
         if (!Directory.Exists(this.dataDirectory))
         {
-            Directory.CreateDirectory(this.dataDirectory);
+            _ = Directory.CreateDirectory(this.dataDirectory);
         }
 
         if (!File.Exists(this.spamDomainsPath))

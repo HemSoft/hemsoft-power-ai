@@ -4,6 +4,8 @@
 
 namespace HemSoft.PowerAI.Console.Services;
 
+using System.Diagnostics.CodeAnalysis;
+
 using Microsoft.Extensions.AI;
 
 using OpenAI;
@@ -16,16 +18,22 @@ using OpenAI;
 /// the resulting client does not automatically dispose the inner client. This wrapper
 /// ensures both are disposed correctly, satisfying IDisposableAnalyzers requirements.
 /// </remarks>
+[ExcludeFromCodeCoverage(Justification = "Chat client wrapper requires external API")]
 internal sealed class CompositeDisposableChatClient : IChatClient
 {
     private readonly IChatClient builtClient;
     private readonly IDisposable innerClientDisposable;
+    private readonly IDisposable? loggingClientDisposable;
     private bool disposed;
 
-    private CompositeDisposableChatClient(IChatClient builtClient, IDisposable innerClientDisposable)
+    private CompositeDisposableChatClient(
+        IChatClient builtClient,
+        IDisposable innerClientDisposable,
+        IDisposable? loggingClientDisposable = null)
     {
         this.builtClient = builtClient;
         this.innerClientDisposable = innerClientDisposable;
+        this.loggingClientDisposable = loggingClientDisposable;
     }
 
     /// <summary>
@@ -33,23 +41,15 @@ internal sealed class CompositeDisposableChatClient : IChatClient
     /// </summary>
     /// <param name="openAiClient">The OpenAI client.</param>
     /// <param name="modelId">The model ID to use.</param>
+    /// <param name="enableLogging">Whether to enable request/response logging.</param>
     /// <returns>A composite chat client that properly disposes all resources.</returns>
     public static CompositeDisposableChatClient CreateWithFunctionInvocation(
         OpenAIClient openAiClient,
-        string modelId)
-    {
-        var innerClient = openAiClient.GetChatClient(modelId).AsIChatClient();
-        try
-        {
-            var wrappedClient = innerClient.AsBuilder().UseFunctionInvocation().Build();
-            return new CompositeDisposableChatClient(wrappedClient, innerClient);
-        }
-        catch
-        {
-            innerClient.Dispose();
-            throw;
-        }
-    }
+        string modelId,
+        bool enableLogging = false) =>
+        enableLogging
+            ? CreateWithLogging(openAiClient, modelId)
+            : CreateWithoutLogging(openAiClient, modelId);
 
     /// <summary>
     /// Gets a response from the chat client.
@@ -107,7 +107,55 @@ internal sealed class CompositeDisposableChatClient : IChatClient
         }
 
         this.builtClient.Dispose();
+        this.loggingClientDisposable?.Dispose();
         this.innerClientDisposable.Dispose();
         this.disposed = true;
+    }
+
+    private static CompositeDisposableChatClient CreateWithLogging(OpenAIClient openAiClient, string modelId)
+    {
+        var innerClient = openAiClient.GetChatClient(modelId).AsIChatClient();
+        LoggingChatClient? loggingClient = null;
+        IChatClient? wrappedClient = null;
+        var success = false;
+        try
+        {
+            loggingClient = new LoggingChatClient(innerClient);
+            wrappedClient = loggingClient.AsBuilder().UseFunctionInvocation().Build();
+            var result = new CompositeDisposableChatClient(wrappedClient, innerClient, loggingClient);
+            success = true;
+            return result;
+        }
+        finally
+        {
+            if (!success)
+            {
+                wrappedClient?.Dispose();
+                loggingClient?.Dispose();
+                innerClient.Dispose();
+            }
+        }
+    }
+
+    private static CompositeDisposableChatClient CreateWithoutLogging(OpenAIClient openAiClient, string modelId)
+    {
+        var innerClient = openAiClient.GetChatClient(modelId).AsIChatClient();
+        IChatClient? wrappedClient = null;
+        var success = false;
+        try
+        {
+            wrappedClient = innerClient.AsBuilder().UseFunctionInvocation().Build();
+            var result = new CompositeDisposableChatClient(wrappedClient, innerClient, loggingClientDisposable: null);
+            success = true;
+            return result;
+        }
+        finally
+        {
+            if (!success)
+            {
+                wrappedClient?.Dispose();
+                innerClient.Dispose();
+            }
+        }
     }
 }

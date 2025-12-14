@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
 using HemSoft.PowerAI.Console.Configuration;
+using HemSoft.PowerAI.Console.Extensions;
 using HemSoft.PowerAI.Console.Services;
 
 using Microsoft.Graph;
@@ -58,7 +59,7 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
 
         AnsiConsole.MarkupLine($"[cyan]Processing {blockedDomains.Count} blocked domain(s)...[/]\n");
 
-        var domainList = blockedDomains.Select(d => d.Domain).ToList();
+        var domainList = blockedDomains.ConvertAll(d => d.Domain);
         var stats = await ExecuteCleanupAsync(client, domainList, cancellationToken).ConfigureAwait(false);
 
         DisplaySummary(stats);
@@ -84,8 +85,8 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
         var stats = new CleanupStats();
 
         await AnsiConsole.Progress()
-            .AutoClear(false)
-            .HideCompleted(false)
+            .AutoClear(enabled: false)
+            .HideCompleted(enabled: false)
             .Columns(
                 new TaskDescriptionColumn(),
                 new ProgressBarColumn(),
@@ -122,7 +123,7 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
             if (movedCount > 0)
             {
                 stats.TotalEmailsMoved += movedCount;
-                AnsiConsole.MarkupLine($"  [yellow]{domainName}[/]: Moved {movedCount} email(s) to junk");
+                AnsiConsole.MarkupLine($"  [yellow]{domainName}[/]: Moved {movedCount.ToInvariant()} email(s) to junk");
             }
 
             stats.DomainsProcessed++;
@@ -152,7 +153,7 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
             if (deletedCount > 0)
             {
                 stats.TotalEmailsDeleted += deletedCount;
-                AnsiConsole.MarkupLine($"  [red]{domainName}[/]: Deleted {deletedCount} email(s) from junk");
+                AnsiConsole.MarkupLine($"  [red]{domainName}[/]: Deleted {deletedCount.ToInvariant()} email(s) from junk");
             }
 
             junkTask.Increment(1);
@@ -167,10 +168,10 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
 
     private static void DisplaySummary(CleanupStats stats)
     {
-        AnsiConsole.MarkupLine($"\n[green]═══ Cleanup Complete ═══[/]");
-        AnsiConsole.MarkupLine($"[green]Domains checked: {stats.DomainsProcessed}[/]");
-        AnsiConsole.MarkupLine($"[yellow]Emails moved from inbox to junk: {stats.TotalEmailsMoved}[/]");
-        AnsiConsole.MarkupLine($"[red]Emails deleted from junk: {stats.TotalEmailsDeleted}[/]");
+        AnsiConsole.MarkupLine("\n[green]═══ Cleanup Complete ═══[/]");
+        AnsiConsole.MarkupLine($"[green]Domains checked: {stats.DomainsProcessed.ToInvariant()}[/]");
+        AnsiConsole.MarkupLine($"[yellow]Emails moved from inbox to junk: {stats.TotalEmailsMoved.ToInvariant()}[/]");
+        AnsiConsole.MarkupLine($"[red]Emails deleted from junk: {stats.TotalEmailsDeleted.ToInvariant()}[/]");
     }
 
     private static async Task<int> ProcessDomainInboxAsync(
@@ -179,7 +180,7 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
         CancellationToken cancellationToken)
     {
         using var activity = GraphApiActivitySource.StartActivity("ProcessDomainInbox");
-        activity?.SetTag("domain", domain);
+        _ = activity?.SetTag("domain", domain);
 
         var movedCount = 0;
 
@@ -200,7 +201,7 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
                 return 0;
             }
 
-            activity?.SetTag("emails.found", messages.Value.Count);
+            _ = activity?.SetTag("emails.found", messages.Value.Count);
 
             foreach (var message in messages.Value)
             {
@@ -211,7 +212,7 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
 
                 try
                 {
-                    await client.Me.MailFolders[FolderInbox].Messages[message.Id].Move.PostAsync(
+                    _ = await client.Me.MailFolders[FolderInbox].Messages[message.Id].Move.PostAsync(
                         new Microsoft.Graph.Me.MailFolders.Item.Messages.Item.Move.MovePostRequestBody
                         {
                             DestinationId = FolderJunk,
@@ -226,11 +227,11 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
                 }
             }
 
-            activity?.SetTag("emails.moved", movedCount);
+            _ = activity?.SetTag("emails.moved", movedCount);
         }
         catch (ODataError ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
             AnsiConsole.MarkupLine($"  [yellow]Error searching inbox for {domain}: {Markup.Escape(ex.Error?.Message ?? ex.Message)}[/]");
         }
 
@@ -243,7 +244,7 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
         CancellationToken cancellationToken)
     {
         using var activity = GraphApiActivitySource.StartActivity("ProcessDomainJunk");
-        activity?.SetTag("domain", domain);
+        _ = activity?.SetTag("domain", domain);
 
         var deletedCount = 0;
 
@@ -264,7 +265,7 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
                 return 0;
             }
 
-            activity?.SetTag("emails.found", messages.Value.Count);
+            _ = activity?.SetTag("emails.found", messages.Value.Count);
 
             foreach (var message in messages.Value)
             {
@@ -286,11 +287,11 @@ internal sealed class SpamCleanupAgent(SpamFilterSettings settings) : IDisposabl
                 }
             }
 
-            activity?.SetTag("emails.deleted", deletedCount);
+            _ = activity?.SetTag("emails.deleted", deletedCount);
         }
         catch (ODataError ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
+            _ = activity?.SetStatus(ActivityStatusCode.Error, ex.Error?.Message ?? ex.Message);
             AnsiConsole.MarkupLine($"  [yellow]Error searching junk for {domain}: {Markup.Escape(ex.Error?.Message ?? ex.Message)}[/]");
         }
 

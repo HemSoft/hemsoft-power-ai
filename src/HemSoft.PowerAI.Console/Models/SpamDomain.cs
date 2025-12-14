@@ -17,7 +17,7 @@ internal sealed class SpamDomain
     /// <summary>
     /// Gets or sets the date when this domain was added to the list.
     /// </summary>
-    public DateTime AddedAt { get; set; } = DateTime.UtcNow;
+    public required DateTimeOffset AddedAt { get; set; }
 
     /// <summary>
     /// Gets or sets an optional reason for marking this domain as spam.

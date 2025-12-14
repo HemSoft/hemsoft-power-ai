@@ -47,7 +47,8 @@
   </Target>
 
   <!-- Run Tests After Build for Test Projects (includes coverage threshold enforcement) -->
-  <Target Name="RunTestsAfterBuild" AfterTargets="Build" Condition="'$(IsTestProject)' == 'true' AND '$(RunTestsOnBuild)' != 'false'">
+  <!-- Set RunTestsOnBuild=true to enable automatic test execution during build -->
+  <Target Name="RunTestsAfterBuild" AfterTargets="Build" Condition="'$(IsTestProject)' == 'true' AND '$(RunTestsOnBuild)' == 'true'">
     <Message Text="Running tests with coverage enforcement..." Importance="high" />
     <Exec Command="dotnet test &quot;$(MSBuildProjectFullPath)&quot; --no-build --nologo -v q" ContinueOnError="false" />
   </Target>

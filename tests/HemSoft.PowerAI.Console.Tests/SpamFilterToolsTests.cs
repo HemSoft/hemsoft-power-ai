@@ -30,7 +30,7 @@ public class SpamFilterToolsTests : IDisposable
     public SpamFilterToolsTests()
     {
         this.testDirectory = Path.Combine(Path.GetTempPath(), "SpamFilterToolsTests_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this.testDirectory);
+        _ = Directory.CreateDirectory(this.testDirectory);
 
         this.settings = new SpamFilterSettings
         {
@@ -65,8 +65,8 @@ public class SpamFilterToolsTests : IDisposable
     public void GetKnownSpamDomainsReturnsDomainAsJsonArray()
     {
         // Arrange
-        this.storageService.AddSpamDomain("spam.com", "Test");
-        this.storageService.AddSpamDomain("junk.com", "Test");
+        _ = this.storageService.AddSpamDomain("spam.com", "Test");
+        _ = this.storageService.AddSpamDomain("junk.com", "Test");
 
         // Act
         var result = this.sut.GetKnownSpamDomains();
@@ -86,7 +86,7 @@ public class SpamFilterToolsTests : IDisposable
     public void IsKnownSpamDomainReturnsTrueForKnownDomain()
     {
         // Arrange
-        this.storageService.AddSpamDomain("known.com", "Test");
+        _ = this.storageService.AddSpamDomain("known.com", "Test");
 
         // Act & Assert
         Assert.True(this.sut.IsKnownSpamDomain("known.com"));
@@ -136,7 +136,7 @@ public class SpamFilterToolsTests : IDisposable
         this.sut.SetEvaluationCallback(e => receivedEvaluation = e);
 
         // Act
-        var result = this.sut.ReportEmailEvaluation(null!, null!, null!, null!, null);
+        var result = this.sut.ReportEmailEvaluation(null!, null!, null!, null!, reason: null);
 
         // Assert
         Assert.Equal("Evaluation recorded.", result);
@@ -155,10 +155,10 @@ public class SpamFilterToolsTests : IDisposable
     public void ReportEmailEvaluationHandlesNullCallback()
     {
         // Arrange
-        this.sut.SetEvaluationCallback(null);
+        this.sut.SetEvaluationCallback(callback: null);
 
         // Act & Assert - should not throw
-        var result = this.sut.ReportEmailEvaluation("msg123", "sender@test.com", "Test Subject", "Legitimate", null);
+        var result = this.sut.ReportEmailEvaluation("msg123", "sender@test.com", "Test Subject", "Legitimate", reason: null);
         Assert.Equal("Evaluation recorded.", result);
     }
 
@@ -174,7 +174,7 @@ public class SpamFilterToolsTests : IDisposable
         // Assert
         Assert.Contains("TEST.COM", result, StringComparison.Ordinal);
         var candidates = this.storageService.GetSpamCandidates();
-        Assert.Single(candidates);
+        _ = Assert.Single(candidates);
         Assert.Equal("msg123", candidates[0].MessageId);
     }
 
@@ -185,8 +185,8 @@ public class SpamFilterToolsTests : IDisposable
     public void RecordSpamCandidateClampsConfidenceScore()
     {
         // Act
-        this.sut.RecordSpamCandidate("msg1", "a@test.com", "Subject", "Reason", 1.5);
-        this.sut.RecordSpamCandidate("msg2", "b@test.com", "Subject", "Reason", -0.5);
+        _ = this.sut.RecordSpamCandidate("msg1", "a@test.com", "Subject", "Reason", 1.5);
+        _ = this.sut.RecordSpamCandidate("msg2", "b@test.com", "Subject", "Reason", -0.5);
 
         // Assert
         var candidates = this.storageService.GetSpamCandidates();
@@ -202,7 +202,7 @@ public class SpamFilterToolsTests : IDisposable
     public void RecordSpamCandidateReturnsDuplicateMessage()
     {
         // Arrange
-        this.sut.RecordSpamCandidate("msg123", "spam@test.com", "Subject", "Reason", 0.8);
+        _ = this.sut.RecordSpamCandidate("msg123", "spam@test.com", "Subject", "Reason", 0.8);
 
         // Act
         var result = this.sut.RecordSpamCandidate("msg123", "spam@test.com", "Subject", "Reason", 0.8);
@@ -232,7 +232,7 @@ public class SpamFilterToolsTests : IDisposable
     public void AddToSpamDomainListReturnsDuplicateMessage()
     {
         // Arrange
-        this.sut.AddToSpamDomainList("spam.com", "Test");
+        _ = this.sut.AddToSpamDomainList("spam.com", "Test");
 
         // Act
         var result = this.sut.AddToSpamDomainList("spam.com", "Test");
@@ -248,9 +248,9 @@ public class SpamFilterToolsTests : IDisposable
     public void GetPendingSpamCandidatesByDomainReturnsGroupedCandidates()
     {
         // Arrange
-        this.sut.RecordSpamCandidate("msg1", "a@domain1.com", "Subject 1", "Reason 1", 0.8);
-        this.sut.RecordSpamCandidate("msg2", "b@domain1.com", "Subject 2", "Reason 2", 0.9);
-        this.sut.RecordSpamCandidate("msg3", "c@domain2.com", "Subject 3", "Reason 3", 0.7);
+        _ = this.sut.RecordSpamCandidate("msg1", "a@domain1.com", "Subject 1", "Reason 1", 0.8);
+        _ = this.sut.RecordSpamCandidate("msg2", "b@domain1.com", "Subject 2", "Reason 2", 0.9);
+        _ = this.sut.RecordSpamCandidate("msg3", "c@domain2.com", "Subject 3", "Reason 3", 0.7);
 
         // Act
         var result = this.sut.GetPendingSpamCandidatesByDomain();
@@ -270,8 +270,8 @@ public class SpamFilterToolsTests : IDisposable
     public void ClearProcessedCandidatesClearsAllCandidates()
     {
         // Arrange
-        this.sut.RecordSpamCandidate("msg1", "a@test.com", "Subject", "Reason", 0.8);
-        this.sut.RecordSpamCandidate("msg2", "b@test.com", "Subject", "Reason", 0.9);
+        _ = this.sut.RecordSpamCandidate("msg1", "a@test.com", "Subject", "Reason", 0.8);
+        _ = this.sut.RecordSpamCandidate("msg2", "b@test.com", "Subject", "Reason", 0.9);
 
         // Act
         var result = this.sut.ClearProcessedCandidates();
@@ -297,7 +297,7 @@ public class SpamFilterToolsTests : IDisposable
 
         // Arrange
         var originalValue = Environment.GetEnvironmentVariable("GRAPH_CLIENT_ID");
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", null);
+        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null);
 
         try
         {
@@ -329,7 +329,7 @@ public class SpamFilterToolsTests : IDisposable
 
         // Arrange
         var originalValue = Environment.GetEnvironmentVariable("GRAPH_CLIENT_ID");
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", null);
+        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null);
 
         try
         {
@@ -361,7 +361,7 @@ public class SpamFilterToolsTests : IDisposable
 
         // Arrange
         var originalValue = Environment.GetEnvironmentVariable("GRAPH_CLIENT_ID");
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", null);
+        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null);
 
         try
         {
@@ -393,7 +393,7 @@ public class SpamFilterToolsTests : IDisposable
         SharedGraphClient.Reset();
 
         // Clear User-level (SharedGraphClient falls back to it) and set Process-level
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", null, EnvironmentVariableTarget.User);
+        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null, EnvironmentVariableTarget.User);
         Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", "test-client-id");
 
         try
@@ -514,7 +514,7 @@ public class SpamFilterToolsTests : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        this.Dispose(true);
+        this.Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -537,7 +537,7 @@ public class SpamFilterToolsTests : IDisposable
             {
                 if (Directory.Exists(this.testDirectory))
                 {
-                    Directory.Delete(this.testDirectory, true);
+                    Directory.Delete(this.testDirectory, recursive: true);
                 }
             }
             catch (IOException)

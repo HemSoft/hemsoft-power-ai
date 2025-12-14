@@ -21,7 +21,7 @@ public sealed class TelemetrySetupTests
     {
         // Arrange - ensure no OTLP endpoint is set
         var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
-        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", null);
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
 
         try
         {
@@ -76,7 +76,7 @@ public sealed class TelemetrySetupTests
     {
         // Arrange
         var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
-        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", null);
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
 
         try
         {
@@ -103,7 +103,7 @@ public sealed class TelemetrySetupTests
     {
         // Arrange
         var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
-        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", null);
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
 
         try
         {
@@ -130,7 +130,7 @@ public sealed class TelemetrySetupTests
     {
         // Arrange
         var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
-        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", null);
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
 
         try
         {

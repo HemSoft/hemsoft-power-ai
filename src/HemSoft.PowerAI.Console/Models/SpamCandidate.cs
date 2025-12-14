@@ -32,12 +32,12 @@ internal sealed class SpamCandidate
     /// <summary>
     /// Gets or sets when the email was received.
     /// </summary>
-    public DateTime ReceivedAt { get; set; }
+    public DateTimeOffset ReceivedAt { get; set; }
 
     /// <summary>
     /// Gets or sets when this candidate was identified.
     /// </summary>
-    public DateTime IdentifiedAt { get; set; } = DateTime.UtcNow;
+    public required DateTimeOffset IdentifiedAt { get; set; }
 
     /// <summary>
     /// Gets or sets the AI's reasoning for flagging this as spam.
