@@ -90,7 +90,8 @@ internal sealed partial class SpamFilterAgent : IDisposable
     {
         this.settings = settings;
         var storageService = new SpamStorageService(settings);
-        this.tools = new SpamFilterTools(storageService);
+        var graphClientProvider = new DefaultGraphClientProvider();
+        this.tools = new SpamFilterTools(storageService, graphClientProvider);
     }
 
     private enum BatchAction

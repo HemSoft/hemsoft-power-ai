@@ -5,14 +5,10 @@
 namespace HemSoft.PowerAI.Console.Tools;
 
 using System.ComponentModel;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
-using Azure.Identity;
-
-using HemSoft.PowerAI.Console.Configuration;
 using HemSoft.PowerAI.Console.Extensions;
 using HemSoft.PowerAI.Console.Services;
 
@@ -22,11 +18,14 @@ using Microsoft.Graph.Models;
 using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Identity.Client;
 
+using AuthenticationFailedException = Azure.Identity.AuthenticationFailedException;
+
 /// <summary>
 /// Provides Outlook/Hotmail mail tools for the AI agent using Microsoft Graph.
 /// </summary>
-[ExcludeFromCodeCoverage(Justification = "Graph API operations require authentication")]
-internal static class OutlookMailTools
+/// <param name="graphClientProvider">The Graph client provider for API access.</param>
+/// <param name="spamStorage">Optional spam storage service for domain management.</param>
+internal sealed class OutlookMailTools(IGraphClientProvider graphClientProvider, SpamStorageService? spamStorage = null)
 {
     private const string AuthError = "authentication";
     private const int DefaultMaxResults = 10;
@@ -46,8 +45,7 @@ internal static class OutlookMailTools
     private const string FolderDeleted = "deleteditems";
     private const string FolderArchive = "archive";
 
-    private static string? lastOperation;
-    private static SpamStorageService? spamStorage;
+    private string? lastOperation;
 
     /// <summary>
     /// Accesses Outlook/Hotmail mailbox. Supports personal Microsoft accounts (hotmail.com, outlook.com).
@@ -63,16 +61,16 @@ internal static class OutlookMailTools
         "'folder' (list by name), 'read' (id), 'send' (to,subject,body), 'search' (query), 'delete' (id), " +
         "'batchdelete' (comma-separated ids), 'move' (id,folder), 'count' (folder stats), " +
         "'blocklist' (list blocked domains), 'blockadd' (domain,reason), 'blockcheck' (domain).")]
-    public static async Task<string> MailAsync(
+    public async Task<string> MailAsync(
         string mode,
         string? param1 = null,
         string? param2 = null,
         string? param3 = null,
         int maxResults = DefaultMaxResults)
     {
-        TrackOperation(mode);
+        this.TrackOperation(mode);
 
-        var client = SharedGraphClient.GetClient();
+        var client = graphClientProvider.Client;
         if (client is null)
         {
             return $"Error: Set {SharedGraphClient.ClientIdEnvVar} environment variable. " +
@@ -95,25 +93,18 @@ internal static class OutlookMailTools
             "BATCHDELETE" => await BatchDeleteMessagesAsync(client, param1).ConfigureAwait(false),
             "MOVE" => await MoveMessageAsync(client, param1, param2).ConfigureAwait(false),
             "COUNT" => await CountFolderAsync(client, param1).ConfigureAwait(false),
-            "BLOCKLIST" => GetSpamDomainList(),
-            "BLOCKADD" => AddToSpamDomainList(param1, param2),
-            "BLOCKCHECK" => CheckSpamDomain(param1),
+            "BLOCKLIST" => this.GetSpamDomainList(),
+            "BLOCKADD" => this.AddToSpamDomainList(param1, param2),
+            "BLOCKCHECK" => this.CheckSpamDomain(param1),
             _ => "Unknown mode. Use: inbox, junk, folder, read, send, search, delete, " +
                 "batchdelete, move, count, blocklist, blockadd, blockcheck",
         };
     }
 
     /// <summary>
-    /// Initializes the spam storage service for spam domain management.
-    /// </summary>
-    /// <param name="settings">The spam filter settings.</param>
-    internal static void InitializeSpamStorage(SpamFilterSettings settings) =>
-        spamStorage = new SpamStorageService(settings);
-
-    /// <summary>
     /// Resets the operation tracking state.
     /// </summary>
-    internal static void ResetOperationTracking() => lastOperation = null;
+    internal void ResetOperationTracking() => this.lastOperation = null;
 
     private static string ResolveFolderName(string? folder, string defaultFolder = FolderInbox) =>
         folder?.ToUpperInvariant() switch
@@ -181,18 +172,6 @@ internal static class OutlookMailTools
         catch (MsalServiceException ex)
         {
             return FormatError(AuthError, ex);
-        }
-    }
-
-    private static void TrackOperation(string mode)
-    {
-        var normalizedMode = mode?.ToUpperInvariant() ?? "UNKNOWN";
-
-        if (!string.Equals(normalizedMode, lastOperation, StringComparison.Ordinal))
-        {
-            // New operation type - print it once
-            lastOperation = normalizedMode;
-            System.Console.WriteLine($"        Mail: {mode}");
         }
     }
 
@@ -560,11 +539,23 @@ internal static class OutlookMailTools
         return result;
     }
 
-    private static string GetSpamDomainList()
+    private void TrackOperation(string mode)
+    {
+        var normalizedMode = mode?.ToUpperInvariant() ?? "UNKNOWN";
+
+        if (!string.Equals(normalizedMode, this.lastOperation, StringComparison.Ordinal))
+        {
+            // New operation type - print it once
+            this.lastOperation = normalizedMode;
+            System.Console.WriteLine($"        Mail: {mode}");
+        }
+    }
+
+    private string GetSpamDomainList()
     {
         if (spamStorage is null)
         {
-            return "Error: Spam storage not initialized. Run with /spam first or restart the app.";
+            return "Error: Spam storage not initialized. Provide SpamStorageService in constructor.";
         }
 
         var domains = spamStorage.GetSpamDomains();
@@ -573,11 +564,11 @@ internal static class OutlookMailTools
             : JsonSerializer.Serialize(domains.Select(d => d.Domain));
     }
 
-    private static string AddToSpamDomainList(string? domain, string? reason)
+    private string AddToSpamDomainList(string? domain, string? reason)
     {
         if (spamStorage is null)
         {
-            return "Error: Spam storage not initialized. Run with /spam first or restart the app.";
+            return "Error: Spam storage not initialized. Provide SpamStorageService in constructor.";
         }
 
         if (string.IsNullOrWhiteSpace(domain))
@@ -591,11 +582,11 @@ internal static class OutlookMailTools
             : $"Domain {domain.ToUpperInvariant()} already in spam registry.";
     }
 
-    private static string CheckSpamDomain(string? domain)
+    private string CheckSpamDomain(string? domain)
     {
         if (spamStorage is null)
         {
-            return "Error: Spam storage not initialized. Run with /spam first or restart the app.";
+            return "Error: Spam storage not initialized. Provide SpamStorageService in constructor.";
         }
 
         if (string.IsNullOrWhiteSpace(domain))

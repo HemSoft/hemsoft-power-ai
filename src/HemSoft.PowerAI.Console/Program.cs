@@ -128,7 +128,9 @@ internal static partial class Program
 
         using var chatClient = CompositeDisposableChatClient.CreateWithFunctionInvocation(openAiClient, ModelId);
 
-        OutlookMailTools.InitializeSpamStorage(spamSettings);
+        var graphClientProvider = new DefaultGraphClientProvider();
+        var spamStorageService = new SpamStorageService(spamSettings);
+        var outlookMailTools = new OutlookMailTools(graphClientProvider, spamStorageService);
 
         var tools = new ChatOptions
         {
@@ -136,7 +138,7 @@ internal static partial class Program
             [
                 AIFunctionFactory.Create(TerminalTools.Terminal),
                 AIFunctionFactory.Create(WebSearchTools.WebSearchAsync),
-                AIFunctionFactory.Create(OutlookMailTools.MailAsync),
+                AIFunctionFactory.Create(outlookMailTools.MailAsync),
             ],
         };
 
@@ -681,8 +683,10 @@ internal static partial class Program
         // Create chat client with function invocation support
         using var chatClient = CompositeDisposableChatClient.CreateWithFunctionInvocation(openAiClient, ModelId);
 
-        // Initialize spam storage for mail tool's spam registry modes
-        OutlookMailTools.InitializeSpamStorage(spamSettings);
+        // Initialize graph client and mail tools
+        var graphClientProvider = new DefaultGraphClientProvider();
+        var spamStorageService = new SpamStorageService(spamSettings);
+        var outlookMailTools = new OutlookMailTools(graphClientProvider, spamStorageService);
 
         // Register tools
         var tools = new ChatOptions
@@ -691,7 +695,7 @@ internal static partial class Program
             [
                 AIFunctionFactory.Create(TerminalTools.Terminal),
                 AIFunctionFactory.Create(WebSearchTools.WebSearchAsync),
-                AIFunctionFactory.Create(OutlookMailTools.MailAsync),
+                AIFunctionFactory.Create(outlookMailTools.MailAsync),
             ],
         };
 

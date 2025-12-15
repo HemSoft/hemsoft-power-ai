@@ -11,6 +11,7 @@ using Xunit;
 /// <summary>
 /// Unit tests for <see cref="TelemetrySetup"/>.
 /// </summary>
+[Collection("EnvironmentVariableTests")]
 public sealed class TelemetrySetupTests
 {
     /// <summary>
@@ -21,7 +22,9 @@ public sealed class TelemetrySetupTests
     {
         // Arrange - ensure no OTLP endpoint is set
         var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
         Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", value: null);
 
         try
         {
@@ -38,6 +41,7 @@ public sealed class TelemetrySetupTests
         {
             // Restore original environment
             Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
         }
     }
 
@@ -49,7 +53,9 @@ public sealed class TelemetrySetupTests
     {
         // Arrange
         var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
         Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", value: null);
 
         try
         {
@@ -65,6 +71,7 @@ public sealed class TelemetrySetupTests
         {
             // Restore original environment
             Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
         }
     }
 
@@ -76,7 +83,9 @@ public sealed class TelemetrySetupTests
     {
         // Arrange
         var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
         Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", value: null);
 
         try
         {
@@ -92,6 +101,7 @@ public sealed class TelemetrySetupTests
         {
             // Restore original environment
             Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
         }
     }
 
@@ -103,7 +113,9 @@ public sealed class TelemetrySetupTests
     {
         // Arrange
         var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
         Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", value: null);
 
         try
         {
@@ -119,6 +131,7 @@ public sealed class TelemetrySetupTests
         {
             // Restore original environment
             Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
         }
     }
 
@@ -130,7 +143,9 @@ public sealed class TelemetrySetupTests
     {
         // Arrange
         var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
         Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", value: null);
 
         try
         {
@@ -146,6 +161,214 @@ public sealed class TelemetrySetupTests
         {
             // Restore original environment
             Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
+        }
+    }
+
+    /// <summary>
+    /// Tests that TelemetrySetup initializes with console exporter enabled.
+    /// </summary>
+    [Fact]
+    public void ConstructorWithConsoleExporterCreatesInstance()
+    {
+        // Arrange
+        var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", "true");
+
+        try
+        {
+            // Act
+            using var telemetry = new TelemetrySetup("TestSourceConsole");
+
+            // Assert
+            Assert.NotNull(telemetry.ActivitySource);
+            Assert.NotNull(telemetry.Meter);
+            Assert.NotNull(telemetry.LoggerFactory);
+        }
+        finally
+        {
+            // Restore original environment
+            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
+        }
+    }
+
+    /// <summary>
+    /// Tests that TelemetrySetup initializes with both OTLP and console exporter.
+    /// </summary>
+    [Fact]
+    public void ConstructorWithBothExportersCreatesInstance()
+    {
+        // Arrange
+        var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", "true");
+
+        try
+        {
+            // Act
+            using var telemetry = new TelemetrySetup("TestSourceBoth");
+
+            // Assert
+            Assert.NotNull(telemetry.ActivitySource);
+            Assert.NotNull(telemetry.Meter);
+            Assert.NotNull(telemetry.LoggerFactory);
+        }
+        finally
+        {
+            // Restore original environment
+            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
+        }
+    }
+
+    /// <summary>
+    /// Tests that Meter is created with source name.
+    /// </summary>
+    [Fact]
+    public void MeterIsCreatedWithSourceName()
+    {
+        // Arrange
+        var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", value: null);
+
+        try
+        {
+            using var telemetry = new TelemetrySetup("TestMeterSource");
+
+            // Assert
+            Assert.NotNull(telemetry.Meter);
+            Assert.Equal("TestMeterSource", telemetry.Meter.Name);
+        }
+        finally
+        {
+            // Restore original environment
+            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
+        }
+    }
+
+    /// <summary>
+    /// Tests that console exporter env var is case insensitive.
+    /// </summary>
+    [Fact]
+    public void ConsoleExporterEnvVarIsCaseInsensitive()
+    {
+        // Arrange
+        var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", "TRUE");
+
+        try
+        {
+            // Act
+            using var telemetry = new TelemetrySetup("TestSourceCaseInsensitive");
+
+            // Assert
+            Assert.NotNull(telemetry);
+        }
+        finally
+        {
+            // Restore original environment
+            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
+        }
+    }
+
+    /// <summary>
+    /// Tests that console exporter with false value doesn't enable console.
+    /// </summary>
+    [Fact]
+    public void ConsoleExporterFalseDisablesConsole()
+    {
+        // Arrange
+        var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", "false");
+
+        try
+        {
+            // Act
+            using var telemetry = new TelemetrySetup("TestSourceFalse");
+
+            // Assert
+            Assert.NotNull(telemetry);
+        }
+        finally
+        {
+            // Restore original environment
+            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
+        }
+    }
+
+    /// <summary>
+    /// Tests that multiple TelemetrySetup instances can be created.
+    /// </summary>
+    [Fact]
+    public void MultipleTelemetrySetupInstancesCanBeCreated()
+    {
+        // Arrange
+        var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", value: null);
+
+        try
+        {
+            // Act
+            using var telemetry1 = new TelemetrySetup("TestSource1");
+            using var telemetry2 = new TelemetrySetup("TestSource2");
+
+            // Assert
+            Assert.NotNull(telemetry1);
+            Assert.NotNull(telemetry2);
+            Assert.NotEqual(telemetry1.ActivitySource.Name, telemetry2.ActivitySource.Name);
+        }
+        finally
+        {
+            // Restore original environment
+            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
+        }
+    }
+
+    /// <summary>
+    /// Tests that CreateLogger can create multiple loggers.
+    /// </summary>
+    [Fact]
+    public void CreateLoggerCanCreateMultipleLoggers()
+    {
+        // Arrange
+        var originalEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        var originalConsole = Environment.GetEnvironmentVariable("OTEL_CONSOLE_EXPORTER");
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", value: null);
+        Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", value: null);
+
+        try
+        {
+            using var telemetry = new TelemetrySetup("TestSource");
+
+            // Act
+            var logger1 = telemetry.CreateLogger<TelemetrySetupTests>();
+            var logger2 = telemetry.CreateLogger<string>();
+
+            // Assert
+            Assert.NotNull(logger1);
+            Assert.NotNull(logger2);
+        }
+        finally
+        {
+            // Restore original environment
+            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", originalEndpoint);
+            Environment.SetEnvironmentVariable("OTEL_CONSOLE_EXPORTER", originalConsole);
         }
     }
 }

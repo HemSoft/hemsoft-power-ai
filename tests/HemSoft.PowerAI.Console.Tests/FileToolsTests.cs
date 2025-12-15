@@ -605,4 +605,21 @@ public sealed class FileToolsTests : IDisposable
         // Assert
         Assert.Contains("Error writing", result, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies QueryFileSystem read handles directory as path (returns not found).
+    /// </summary>
+    [Fact]
+    public void QueryFileSystemReadDirectoryAsFile()
+    {
+        // Arrange - create a subdirectory
+        var subDir = Path.Combine(this.testDir, "subdir_for_read_test");
+        _ = Directory.CreateDirectory(subDir);
+
+        // Act - try to read a directory as if it were a file
+        var result = FileTools.QueryFileSystem("read", subDir);
+
+        // Assert - File.Exists returns false for directories, so returns "File not found"
+        Assert.Contains("File not found", result, StringComparison.Ordinal);
+    }
 }

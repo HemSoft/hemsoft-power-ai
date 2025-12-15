@@ -290,6 +290,65 @@ public class SpamStorageServiceTests : IDisposable
         Assert.Empty(this.sut.GetSpamCandidates());
     }
 
+    /// <summary>
+    /// Tests that RemoveSpamCandidate returns false when candidate does not exist.
+    /// </summary>
+    [Fact]
+    public void RemoveSpamCandidateReturnsFalseWhenNotFound()
+    {
+        // Act - try to remove a candidate that was never added
+        var result = this.sut.RemoveSpamCandidate("nonexistent-msg-id");
+
+        // Assert
+        Assert.False(result);
+    }
+
+    /// <summary>
+    /// Tests that SpamStorageService creates directory if it does not exist.
+    /// </summary>
+    [Fact]
+    public void ConstructorCreatesDirectoryIfNotExists()
+    {
+        // Arrange - create a path to a non-existent directory
+        var newDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "SpamStorageServiceTests_New_" + Guid.NewGuid().ToString("N")[..8]);
+
+        try
+        {
+            // Act - create service with non-existent directory
+            var newSettings = new SpamFilterSettings
+            {
+                HumanReviewFilePath = Path.Combine(newDirectory, "human_review.json"),
+                SpamDomainsFilePath = "spam_domains.json",
+                SpamCandidatesFilePath = "spam_candidates.json",
+            };
+            _ = new SpamStorageService(newSettings, newDirectory);
+
+            // Assert - directory should now exist
+            Assert.True(Directory.Exists(newDirectory));
+
+            // Also verify files were created
+            Assert.True(File.Exists(Path.Combine(newDirectory, "spam_domains.json")));
+            Assert.True(File.Exists(Path.Combine(newDirectory, "spam_candidates.json")));
+        }
+        finally
+        {
+            // Cleanup
+            try
+            {
+                if (Directory.Exists(newDirectory))
+                {
+                    Directory.Delete(newDirectory, recursive: true);
+                }
+            }
+            catch (IOException)
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

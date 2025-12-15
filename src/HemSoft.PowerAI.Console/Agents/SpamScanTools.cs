@@ -6,7 +6,6 @@ namespace HemSoft.PowerAI.Console.Agents;
 
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -26,8 +25,11 @@ internal delegate void ScanResultCallback(SpamScanAgent.ScanResult result);
 /// </summary>
 /// <param name="storageService">The spam storage service.</param>
 /// <param name="humanReviewService">The human review service.</param>
-[ExcludeFromCodeCoverage(Justification = "Tools require Graph API authentication")]
-internal sealed partial class SpamScanTools(SpamStorageService storageService, HumanReviewService humanReviewService) : IDisposable
+/// <param name="graphClientProvider">The Graph client provider for API access.</param>
+internal sealed partial class SpamScanTools(
+    SpamStorageService storageService,
+    HumanReviewService humanReviewService,
+    IGraphClientProvider graphClientProvider) : IDisposable
 {
     private const string FolderInbox = "inbox";
 
@@ -82,7 +84,7 @@ internal sealed partial class SpamScanTools(SpamStorageService storageService, H
         using var activity = GraphApiActivitySource.StartActivity("GetInboxEmails");
         _ = activity?.SetTag("batch.size", batchSize);
 
-        var client = SharedGraphClient.GetClient();
+        var client = graphClientProvider.Client;
         if (client is null)
         {
             _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
@@ -158,7 +160,7 @@ internal sealed partial class SpamScanTools(SpamStorageService storageService, H
         using var activity = GraphApiActivitySource.StartActivity("ReadEmail");
         _ = activity?.SetTag("message.id", messageId);
 
-        var client = SharedGraphClient.GetClient();
+        var client = graphClientProvider.Client;
         if (client is null)
         {
             _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");

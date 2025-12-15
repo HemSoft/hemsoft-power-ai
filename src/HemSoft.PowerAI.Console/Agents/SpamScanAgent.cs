@@ -75,7 +75,8 @@ internal sealed partial class SpamScanAgent : IDisposable
         this.settings = settings;
         var storageService = new SpamStorageService(settings);
         var humanReviewService = new HumanReviewService(settings);
-        this.tools = new SpamScanTools(storageService, humanReviewService);
+        var graphClientProvider = new DefaultGraphClientProvider();
+        this.tools = new SpamScanTools(storageService, humanReviewService, graphClientProvider);
     }
 
     /// <summary>

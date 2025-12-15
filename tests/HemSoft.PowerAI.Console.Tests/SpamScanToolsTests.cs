@@ -21,6 +21,7 @@ public class SpamScanToolsTests : IDisposable
     private readonly SpamFilterSettings settings;
     private readonly SpamStorageService storageService;
     private readonly HumanReviewService humanReviewService;
+    private readonly MockGraphClientProvider mockGraphProvider;
     private readonly SpamScanTools sut;
     private bool disposed;
 
@@ -41,7 +42,8 @@ public class SpamScanToolsTests : IDisposable
 
         this.storageService = new SpamStorageService(this.settings, this.testDirectory);
         this.humanReviewService = new HumanReviewService(this.settings);
-        this.sut = new SpamScanTools(this.storageService, this.humanReviewService);
+        this.mockGraphProvider = new MockGraphClientProvider();
+        this.sut = new SpamScanTools(this.storageService, this.humanReviewService, this.mockGraphProvider);
     }
 
     /// <summary>
@@ -293,7 +295,7 @@ public class SpamScanToolsTests : IDisposable
     public void DisposeCanBeCalledMultipleTimes()
     {
         // Arrange
-        using var tools = new SpamScanTools(this.storageService, this.humanReviewService);
+        using var tools = new SpamScanTools(this.storageService, this.humanReviewService, this.mockGraphProvider);
 
         // Act
         var exception = Record.Exception(() =>
@@ -307,73 +309,35 @@ public class SpamScanToolsTests : IDisposable
     }
 
     /// <summary>
-    /// Tests that GetInboxEmailsAsync returns error when client ID not set.
+    /// Tests that GetInboxEmailsAsync returns error when Graph client not configured.
     /// </summary>
     /// <returns>A task representing the asynchronous test operation.</returns>
     [Fact]
-    public async Task GetInboxEmailsAsyncReturnsErrorWhenClientIdNotSet()
+    public async Task GetInboxEmailsAsyncReturnsErrorWhenClientNotConfigured()
     {
-        // Skip if GRAPH_CLIENT_ID is configured in user registry (code falls back to registry)
-        var userRegistryValue = Environment.GetEnvironmentVariable("GRAPH_CLIENT_ID", EnvironmentVariableTarget.User);
-        if (!string.IsNullOrEmpty(userRegistryValue))
-        {
-            return; // Test not applicable when user has Graph configured
-        }
+        // Arrange - mockGraphProvider returns null client by default
 
-        // Arrange - ensure env var is not set
-        var originalValue = Environment.GetEnvironmentVariable("GRAPH_CLIENT_ID");
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null);
+        // Act
+        var result = await this.sut.GetInboxEmailsAsync(10);
 
-        try
-        {
-            // Act
-            var result = await this.sut.GetInboxEmailsAsync(10);
-
-            // Assert
-            Assert.Contains("GRAPH_CLIENT_ID", result, StringComparison.Ordinal);
-        }
-        finally
-        {
-            // Restore original value
-            Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", originalValue);
-        }
+        // Assert
+        Assert.Contains("GRAPH_CLIENT_ID", result, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// Tests that ReadEmailAsync returns error when client ID not set.
+    /// Tests that ReadEmailAsync returns error when Graph client not configured.
     /// </summary>
     /// <returns>A task representing the asynchronous test operation.</returns>
     [Fact]
-    public async Task ReadEmailAsyncReturnsErrorWhenClientIdNotSet()
+    public async Task ReadEmailAsyncReturnsErrorWhenClientNotConfigured()
     {
-        // Skip if GRAPH_CLIENT_ID is configured in user registry (code falls back to registry)
-        var userRegistryValue = Environment.GetEnvironmentVariable("GRAPH_CLIENT_ID", EnvironmentVariableTarget.User);
-        if (!string.IsNullOrEmpty(userRegistryValue))
-        {
-            return; // Test not applicable when user has Graph configured
-        }
+        // Arrange - mockGraphProvider returns null client by default
 
-        // Arrange - ensure env var is not set and create a FRESH instance
-        // to avoid test pollution from parallel test execution
-        var originalValue = Environment.GetEnvironmentVariable("GRAPH_CLIENT_ID");
-        Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", value: null);
+        // Act
+        var result = await this.sut.ReadEmailAsync("msg123");
 
-        try
-        {
-            // Create fresh instance after env var is cleared to test the "no client ID" path
-            using var freshSut = new SpamScanTools(this.storageService, this.humanReviewService);
-
-            // Act
-            var result = await freshSut.ReadEmailAsync("msg123");
-
-            // Assert
-            Assert.Contains("GRAPH_CLIENT_ID", result, StringComparison.Ordinal);
-        }
-        finally
-        {
-            // Restore original value
-            Environment.SetEnvironmentVariable("GRAPH_CLIENT_ID", originalValue);
-        }
+        // Assert
+        Assert.Contains("GRAPH_CLIENT_ID", result, StringComparison.Ordinal);
     }
 
     /// <summary>

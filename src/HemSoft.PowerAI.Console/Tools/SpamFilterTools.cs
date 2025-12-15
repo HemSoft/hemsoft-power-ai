@@ -6,7 +6,6 @@ namespace HemSoft.PowerAI.Console.Tools;
 
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -29,9 +28,12 @@ internal delegate void EmailEvaluatedCallback(EmailEvaluation evaluation);
 /// Provides spam filtering tools for the AI agent.
 /// </summary>
 /// <param name="storageService">The spam storage service for persisting spam domain data.</param>
+/// <param name="graphClientProvider">The Graph client provider for API access.</param>
 /// <param name="timeProvider">The time provider to use. Defaults to system time.</param>
-[ExcludeFromCodeCoverage(Justification = "Tools require Graph API authentication")]
-internal sealed partial class SpamFilterTools(SpamStorageService storageService, TimeProvider? timeProvider = null) : IDisposable
+internal sealed partial class SpamFilterTools(
+    SpamStorageService storageService,
+    IGraphClientProvider graphClientProvider,
+    TimeProvider? timeProvider = null) : IDisposable
 {
     private const string FolderInbox = "inbox";
     private const string FolderJunk = "junkemail";
@@ -118,7 +120,7 @@ internal sealed partial class SpamFilterTools(SpamStorageService storageService,
         using var activity = GraphApiActivitySource.StartActivity("GetInboxEmails");
         _ = activity?.SetTag("batch.size", batchSize);
 
-        var client = SharedGraphClient.GetClient();
+        var client = graphClientProvider.Client;
         if (client is null)
         {
             _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
@@ -207,7 +209,7 @@ internal sealed partial class SpamFilterTools(SpamStorageService storageService,
         using var activity = GraphApiActivitySource.StartActivity("ReadEmail");
         _ = activity?.SetTag("message.id", messageId);
 
-        var client = SharedGraphClient.GetClient();
+        var client = graphClientProvider.Client;
         if (client is null)
         {
             _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
@@ -262,7 +264,7 @@ internal sealed partial class SpamFilterTools(SpamStorageService storageService,
         using var activity = GraphApiActivitySource.StartActivity("MoveToJunk");
         _ = activity?.SetTag("message.id", messageId);
 
-        var client = SharedGraphClient.GetClient();
+        var client = graphClientProvider.Client;
         if (client is null)
         {
             _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing client ID");
