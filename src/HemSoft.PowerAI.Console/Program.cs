@@ -54,6 +54,8 @@ internal static partial class Program
         CoordinateDistributed = 9,
         HostResearch = 10,
         Message = 11,
+        Model = 12,
+        Agents = 13,
     }
 
     /// <summary>
@@ -369,29 +371,40 @@ internal static partial class Program
         var envUrl = Environment.GetEnvironmentVariable(ResearchAgentUrlEnvVar);
         var researchAgentUrl = !string.IsNullOrEmpty(envUrl) ? new Uri(envUrl) : a2aSettings.DefaultResearchAgentUrl;
 
+        AnsiConsole.MarkupLine("[green]✓ CoordinatorAgent initialized[/]");
+        AnsiConsole.MarkupLine("[dim]  └─ Connecting sub-agents...[/]");
+
         // Create MailAgent - always local since it needs Graph client
         var mailAgent = MailAgent.Create(graphClientProvider, spamStorage);
+        AnsiConsole.MarkupLine("[green]     └─ MailAgent: ✓ Ready (local)[/]");
+        AnsiConsole.MarkupLine("[green]     └─ FileTools: ✓ Ready (local)[/]");
 
         try
         {
-            AnsiConsole.MarkupLine($"[dim]Attempting to connect to Azure Function at {researchAgentUrl}...[/]");
+            AnsiConsole.MarkupLine($"[dim]     └─ ResearchAgent: Connecting to {researchAgentUrl}...[/]");
 
-            var (remoteAgent, agentCard) = await Agents.Infrastructure.A2AAgentClient
+            var (remoteAgent, _) = await Agents.Infrastructure.A2AAgentClient
                 .ConnectAsync(researchAgentUrl, cancellationToken)
                 .ConfigureAwait(false);
 
             // Use AsAIFunction() directly - the MS Agent Framework pattern
             var remoteResearchTool = remoteAgent.AsAIFunction();
 
-            AnsiConsole.MarkupLine($"[green]✓ Connected to remote ResearchAgent: {agentCard.Name}[/]");
-            AnsiConsole.MarkupLine("[dim]Research tasks will be delegated to Azure Function[/]");
+            var host = researchAgentUrl.Host;
+            var port = researchAgentUrl.Port.ToString(CultureInfo.InvariantCulture);
+            AnsiConsole.MarkupLine($"[green]     └─ ResearchAgent: ✓ Connected (remote @ {host}:{port})[/]");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[blue]Ready to coordinate. What would you like me to do?[/]");
 
             return CoordinatorAgent.CreateWithRemoteAgent(remoteResearchTool, mailAgent);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
-            AnsiConsole.MarkupLine($"[yellow]⚠ Could not connect to Azure Function: {Markup.Escape(ex.Message)}[/]");
-            AnsiConsole.MarkupLine("[dim]Using local ResearchAgent instead[/]");
+            AnsiConsole.MarkupLine($"[yellow]     └─ ResearchAgent: ⚠ Remote unavailable ({Markup.Escape(ex.Message)})[/]");
+            AnsiConsole.MarkupLine("[green]     └─ ResearchAgent: ✓ Ready (local fallback)[/]");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[blue]Ready to coordinate. What would you like me to do?[/]");
+
             return CoordinatorAgent.Create(ResearchAgent.Create(), mailAgent);
         }
     }
@@ -717,9 +730,9 @@ internal static partial class Program
 
         // Fetch model info from OpenRouter
         using var modelService = new OpenRouterModelService(ModelId);
-        await FetchAndDisplayModelInfoAsync(modelService).ConfigureAwait(false);
+        await FetchModelInfoAsync(modelService).ConfigureAwait(false);
 
-        DisplayHeader(tools);
+        DisplayHeader(tools, modelService);
 
         // Chat history for context
         List<ChatMessage> history = [];
@@ -733,12 +746,50 @@ internal static partial class Program
         return 0;
     }
 
-    private static void DisplayHeader(ChatOptions tools)
+    private static void DisplayHeader(ChatOptions tools, OpenRouterModelService modelService)
     {
         _ = tools; // Tools parameter kept for future use
         AnsiConsole.Write(new FigletText("Power AI").Color(Color.Blue));
-        AnsiConsole.MarkupLine($"[dim]Model: {ModelId}[/]");
-        AnsiConsole.MarkupLine("[dim]Just chat naturally. Type [cyan]/[/] for agents, [cyan]exit[/] to quit.[/]\n");
+
+        var info = modelService.Info;
+        if (info is null)
+        {
+            AnsiConsole.MarkupLine($"[dim]Model: {modelService.ModelId}[/]\n");
+            return;
+        }
+
+        // Build compact capability indicators
+        var capabilities = new List<string>();
+        if (info.SupportsTools)
+        {
+            capabilities.Add("[green]tools[/]");
+        }
+
+        if (info.SupportsReasoning)
+        {
+            capabilities.Add("[magenta]reasoning[/]");
+        }
+
+        // Input modalities beyond text
+        var inputMods = info.InputModalities
+            .Where(m => !string.Equals(m, "text", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (inputMods.Count > 0)
+        {
+            capabilities.Add($"[yellow]+{string.Join('+', inputMods)}[/]");
+        }
+
+        // Use [[ and ]] to escape literal brackets in Spectre.Console markup
+        var capStr = capabilities.Count > 0 ? $" [[{string.Join(' ', capabilities)}]]" : string.Empty;
+
+        // Context and output token info
+        var contextStr = $"[cyan]{info.ContextLength.ToInvariant("N0")}[/][dim]in[/]";
+        var outputStr = info.MaxCompletionTokens.HasValue
+            ? $" [cyan]{info.MaxCompletionTokens.Value.ToInvariant("N0")}[/][dim]out[/]"
+            : string.Empty;
+
+        AnsiConsole.MarkupLine($"[dim]Model:[/] {modelService.ModelId}{capStr} [dim]([/]{contextStr}{outputStr}[dim])[/]");
+        AnsiConsole.MarkupLine("[dim]Type '/' for agent menu or '/model' to change model.[/]\n");
     }
 
     private static (ChatCommand Command, string? Argument) ParseCommand(string? input)
@@ -757,15 +808,8 @@ internal static partial class Program
             "EXIT" or "QUIT" => (ChatCommand.Exit, null),
             "/CLEAR" or "CLEAR" => (ChatCommand.Clear, null),
             "/" => (ChatCommand.AgentMenu, null),
-            "/SPAM" => (ChatCommand.Spam, null),
-            "/SPAM-SCAN" => (ChatCommand.SpamScan, null),
-            "/SPAM-REVIEW" => (ChatCommand.SpamReview, null),
-            "/SPAM-CLEANUP" => (ChatCommand.SpamCleanup, null),
-            "/COORDINATE" => (ChatCommand.Coordinate, null),
-            "/COORDINATE-DISTRIBUTED" => (ChatCommand.CoordinateDistributed, null),
-            "/HOST-RESEARCH" => (ChatCommand.HostResearch, null),
-            _ when upper.StartsWith("/COORDINATE ", StringComparison.Ordinal) =>
-                (ChatCommand.Coordinate, trimmed["/COORDINATE ".Length..].Trim()),
+            "/MODEL" => (ChatCommand.Model, null),
+            "/AGENTS" => (ChatCommand.Agents, null),
             _ => (ChatCommand.Message, null),
         };
     }
@@ -820,7 +864,7 @@ internal static partial class Program
             case ChatCommand.Clear:
                 history.Clear();
                 sessionTokens.Reset();
-                await FetchAndDisplayModelInfoAsync(context.ModelService).ConfigureAwait(false);
+                await FetchModelInfoAsync(context.ModelService).ConfigureAwait(false);
                 AnsiConsole.MarkupLine("[yellow]Chat history cleared.[/]\n");
                 return true;
 
@@ -875,22 +919,140 @@ internal static partial class Program
                 AnsiConsole.MarkupLine(ReturnedToChatModeMessage);
                 return true;
 
+            case ChatCommand.Model:
+                await ShowModelPickerAsync(context.ModelService).ConfigureAwait(false);
+                return true;
+
+            case ChatCommand.Agents:
+                await RunAgentsMenuAsync(context).ConfigureAwait(false);
+                return true;
+
             default:
                 return false;
         }
     }
 
-    private static async Task FetchAndDisplayModelInfoAsync(OpenRouterModelService modelService)
-    {
-        await AnsiConsole.Status()
+    private static Task<OpenRouterModelService.ModelInfo?> FetchModelInfoAsync(OpenRouterModelService modelService) =>
+        AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .SpinnerStyle(Style.Parse("dim"))
-            .StartAsync("Fetching model info...", async _ => await modelService.FetchAsync().ConfigureAwait(false))
-            .ConfigureAwait(false);
+            .StartAsync("Fetching model info...", _ => modelService.FetchAsync());
 
-        if (modelService.Info is not null)
+    private static async Task ShowModelPickerAsync(OpenRouterModelService modelService)
+    {
+        // Ensure models are loaded
+        if (modelService.Info is null)
         {
-            AnsiConsole.MarkupLine($"[dim]Context limit: {modelService.Info.ContextLength.ToInvariant("N0")} tokens[/]");
+            await FetchModelInfoAsync(modelService).ConfigureAwait(false);
+        }
+
+        var allModels = modelService.GetAvailableModels(supportsTools: true);
+        if (allModels.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No models available.[/]");
+            return;
+        }
+
+        // Create selection choices showing model capabilities
+        var choices = allModels
+            .Select(m =>
+            {
+                var caps = new List<string>();
+                if (m.SupportsReasoning)
+                {
+                    caps.Add("reasoning");
+                }
+
+                var inputMods = m.InputModalities
+                    .Where(mod => !string.Equals(mod, "text", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (inputMods.Count > 0)
+                {
+                    caps.Add($"+{string.Join('+', inputMods)}");
+                }
+
+                var capStr = caps.Count > 0 ? $" [{string.Join(' ', caps)}]" : string.Empty;
+                var ctxStr = string.Create(CultureInfo.InvariantCulture, $"{m.ContextLength / 1000}k");
+                return $"{m.Id}{capStr} ({ctxStr})";
+            })
+            .ToList();
+
+        // Find current model index - unused but kept for reference
+        _ = allModels
+            .ToList()
+            .FindIndex(m => string.Equals(m.Id, modelService.ModelId, StringComparison.OrdinalIgnoreCase));
+
+        var selection = await AnsiConsole.PromptAsync(
+            new SelectionPrompt<string>()
+                .Title("[blue]Select a model[/] [dim](all support tools)[/]")
+                .PageSize(/* size: */ 15)
+                .HighlightStyle(Style.Parse("cyan"))
+                .AddChoices(choices)
+                .UseConverter(choice => choice)).ConfigureAwait(false);
+
+        // Extract model ID from selection (before capabilities markers)
+        var selectedId = selection.Split(' ')[0];
+        AnsiConsole.MarkupLine(modelService.SetModel(selectedId)
+            ? $"[green]Switched to:[/] {selectedId}\n"
+            : $"[yellow]Model not found:[/] {selectedId}\n");
+    }
+
+    private static async Task RunAgentsMenuAsync(CommandContext context)
+    {
+        _ = context; // Reserved for future use with event-driven architecture
+
+        // For now, just ResearchAgent - will expand with event-driven architecture
+        var prompt = await AnsiConsole.PromptAsync(
+            new TextPrompt<string>("[blue]Research Agent[/] - Enter your research task:")
+                .AllowEmpty()).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            AnsiConsole.MarkupLine("[dim]Cancelled.[/]");
+            return;
+        }
+
+        // Phase 9: Replace with event-driven task submission via Redis
+        // For now, run synchronously using ResearchAgent
+        AnsiConsole.MarkupLine("[dim]Running research task...[/]");
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            var researchAgent = Agents.ResearchAgent.Create();
+
+            AgentRunResponse? response = null;
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("cyan"))
+                .StartAsync(
+                    status: "Researching...",
+                    action: async _ =>
+                        response = await researchAgent.RunAsync(prompt, cancellationToken: cts.Token)
+                            .ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(response?.Text))
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.Write(new Panel(Markup.Escape(response.Text))
+                    .Header("[cyan]Research Result[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Cyan));
+                AnsiConsole.WriteLine();
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[yellow]No response from agent.[/]");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            AnsiConsole.MarkupLine("[yellow]Research task timed out.[/]");
+        }
+        catch (HttpRequestException ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Network error:[/] {Markup.Escape(ex.Message)}");
         }
     }
 

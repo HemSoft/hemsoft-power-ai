@@ -17,17 +17,12 @@ internal static class CommandInputService
     private const string InputPrompt = "[cyan]❯[/] ";
 
     /// <summary>
-    /// Available agents that can be invoked via the / menu.
+    /// Available menu options invoked via /.
     /// </summary>
     private static readonly List<AgentChoice> Agents =
     [
-        new("Coordinator", "Multi-agent orchestration - delegates to specialized agents"),
-        new("SpamFilter", "Interactive spam filter with autonomous capabilities"),
-        new("SpamScan", "Autonomous scan: identifies suspicious domains"),
-        new("SpamReview", "Human review: batch review flagged domains"),
-        new("SpamCleanup", "Cleanup: move emails from blocked domains to junk"),
-        new("HostResearch", "A2A server: hosts ResearchAgent for remote access"),
-        new("Distributed", "A2A client: connects to remote agents"),
+        new("Model", "Change the AI model"),
+        new("Agents", "Run autonomous agent tasks"),
     ];
 
     /// <summary>
@@ -93,13 +88,8 @@ internal static class CommandInputService
 
         return agentName switch
         {
-            "Coordinator" => "/coordinate",
-            "SpamFilter" => "/spam",
-            "SpamScan" => "/spam-scan",
-            "SpamReview" => "/spam-review",
-            "SpamCleanup" => "/spam-cleanup",
-            "HostResearch" => "/host-research",
-            "Distributed" => "/coordinate-distributed",
+            "Model" => "/model",
+            "Agents" => "/agents",
             _ => null,
         };
     }

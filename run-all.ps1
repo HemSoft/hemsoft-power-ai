@@ -42,18 +42,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $ScriptRoot = $PSScriptRoot
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " HemSoft Power AI - Full Stack Startup" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
+Write-Host "HemSoft Power AI" -ForegroundColor Cyan -NoNewline
+Write-Host " - " -NoNewline
 
 # Step 1: Start Aspire Dashboard
 if (-not $SkipAspire) {
-    Write-Host "[1/3] Starting Aspire Dashboard..." -ForegroundColor Yellow
+    Write-Host "[1/3] Aspire" -ForegroundColor Yellow -NoNewline
 
     $dockerAvailable = Get-Command docker -ErrorAction SilentlyContinue
     if (-not $dockerAvailable) {
-        Write-Host "  Docker not available, skipping Aspire Dashboard." -ForegroundColor DarkYellow
+        Write-Host " (skipped)" -ForegroundColor DarkYellow -NoNewline
     }
     else {
         # Stop existing container if running
@@ -68,37 +66,42 @@ if (-not $SkipAspire) {
             --name aspire-dashboard `
             mcr.microsoft.com/dotnet/aspire-dashboard:latest | Out-Null
 
-        Write-Host "  Aspire Dashboard: http://localhost:18888" -ForegroundColor Green
+        Write-Host " ✓" -ForegroundColor Green -NoNewline
     }
 }
 else {
-    Write-Host "[1/3] Skipping Aspire Dashboard" -ForegroundColor DarkGray
+    Write-Host "[1/3] -" -ForegroundColor DarkGray -NoNewline
 }
+
+Write-Host " → " -ForegroundColor DarkGray -NoNewline
 
 # Step 2: Start A2A Agent Host
 if (-not $SkipAgents) {
-    Write-Host "[2/3] Starting A2A Agent Host..." -ForegroundColor Yellow
+    Write-Host "[2/3] AgentHost" -ForegroundColor Yellow -NoNewline
 
     # Start agent host in new terminal
     $agentHostPath = Join-Path $ScriptRoot "src/HemSoft.PowerAI.AgentHost"
     Start-Process pwsh -ArgumentList "-NoExit", "-Command", "Set-Location '$agentHostPath'; dotnet run"
 
-    Write-Host "  Agent Host started in new terminal" -ForegroundColor Green
-    Write-Host "  Agent Card: http://localhost:5001/.well-known/agent-card.json" -ForegroundColor Gray
-    Write-Host "  Health:     http://localhost:5001/health" -ForegroundColor Gray
+    Write-Host " ✓" -ForegroundColor Green -NoNewline
 
-    # Give agent host time to start
-    Write-Host "  Waiting 5 seconds for agent host to initialize..." -ForegroundColor DarkGray
-    Start-Sleep -Seconds 5
+    # Give agent host time to start (show countdown)
+    Write-Host " (init" -ForegroundColor DarkGray -NoNewline
+    for ($i = 5; $i -gt 0; $i--) {
+        Write-Host "." -ForegroundColor DarkGray -NoNewline
+        Start-Sleep -Seconds 1
+    }
+    Write-Host ")" -ForegroundColor DarkGray -NoNewline
 }
 else {
-    Write-Host "[2/3] Skipping A2A Agent Host" -ForegroundColor DarkGray
+    Write-Host "[2/3] -" -ForegroundColor DarkGray -NoNewline
 }
 
+Write-Host " → " -ForegroundColor DarkGray -NoNewline
+
 # Step 3: Start Console App
-Write-Host "[3/3] Starting Console App ($Mode mode)..." -ForegroundColor Yellow
-Write-Host ""
-Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "[3/3] Console" -ForegroundColor Yellow -NoNewline
+Write-Host " ✓" -ForegroundColor Green
 Write-Host ""
 
 $env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4317"
