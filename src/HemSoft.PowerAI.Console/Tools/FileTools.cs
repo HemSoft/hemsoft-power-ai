@@ -24,6 +24,7 @@ internal static class FileTools
         "'info' (file size/date), 'read' (read file contents)")]
     public static string QueryFileSystem(string mode, string path)
     {
+        path = SanitizePath(path);
         System.Console.WriteLine($"[Tool] QueryFileSystem: {mode} {path}");
 
         return mode?.ToUpperInvariant() switch
@@ -40,23 +41,25 @@ internal static class FileTools
     /// Modifies the file system.
     /// </summary>
     /// <param name="mode">Operation mode: 'mkdir' (create folder), 'delete' (remove file/folder), 'move', 'copy', 'write' (create/overwrite file).</param>
-    /// <param name="path">The source path.</param>
-    /// <param name="destination">The destination path (for move/copy) or content (for write).</param>
+    /// <param name="filePath">The target file path for write, or source path for other operations.</param>
+    /// <param name="content">The file content (for write mode) or destination path (for move/copy).</param>
     /// <returns>Result message or error.</returns>
     [Description(
-        "Modify file system. Modes: 'mkdir' (create folder), 'delete' (remove), 'move', 'copy', " +
-        "'write' (create/overwrite). Destination for move/copy, content for write.")]
-    public static string ModifyFileSystem(string mode, string path, string? destination = null)
+        "Modify file system. Modes: 'write' (create/overwrite file with content), 'mkdir' (create folder), " +
+        "'delete' (remove), 'move', 'copy'. For write: filePath is target, content is file text.")]
+    public static string ModifyFileSystem(string mode, string filePath, string? content = null)
     {
-        System.Console.WriteLine($"[Tool] ModifyFileSystem: {mode} {path} -> {destination}");
+        filePath = SanitizePath(filePath);
+        var contentPreview = GetContentPreview(content);
+        System.Console.WriteLine($"[Tool] ModifyFileSystem: {mode} {filePath} -> {contentPreview}");
 
         return mode?.ToUpperInvariant() switch
         {
-            "MKDIR" => CreateFolder(path),
-            "DELETE" => Delete(path),
-            "MOVE" => Move(path, destination),
-            "COPY" => Copy(path, destination),
-            "WRITE" => WriteFile(path, destination),
+            "MKDIR" => CreateFolder(filePath),
+            "DELETE" => Delete(filePath),
+            "MOVE" => Move(filePath, content),
+            "COPY" => Copy(filePath, content),
+            "WRITE" => WriteFile(filePath, content),
             _ => $"Unknown mode '{mode}'. Use: mkdir, delete, move, copy, write",
         };
     }
@@ -72,6 +75,48 @@ internal static class FileTools
         ex is UnauthorizedAccessException
             ? $"Access denied: {path}"
             : $"Error {operation} {path}: {ex.Message}";
+
+    /// <summary>
+    /// Sanitizes a file path by removing invalid characters and extra text that LLMs sometimes append.
+    /// </summary>
+    /// <param name="path">The file path to sanitize.</param>
+    /// <returns>The sanitized path.</returns>
+    private static string SanitizePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        // Trim whitespace and remove common LLM mistakes: PowerShell/bash flags appended to paths
+        // e.g., "F:\weather.md -Encoding utf8" -> "F:\weather.md"
+        var flagPatterns = new[] { " -Encoding", " -Force", " -NoNewline", " >", " |", " &&", " ||" };
+        var sanitized = path.Trim();
+
+        foreach (var pattern in flagPatterns)
+        {
+            var idx = sanitized.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
+            if (idx > 0)
+            {
+                sanitized = sanitized[..idx];
+            }
+        }
+
+        // Remove quotes that LLMs sometimes include
+        return sanitized.Trim('"', '\'');
+    }
+
+    private static string GetContentPreview(string? content)
+    {
+        const int maxPreviewLength = 50;
+
+        return content switch
+        {
+            null => "(null)",
+            { Length: <= maxPreviewLength } => content,
+            _ => $"{content[..maxPreviewLength]}...",
+        };
+    }
 
     private static string ListFiles(string path)
     {

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>HemSoft.PowerAI.AgentHost</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HemSoft.PowerAI.AgentHost.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="A2A.AspNetCore" Version="0.3.3-preview" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HemSoft.PowerAI.Shared\HemSoft.PowerAI.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

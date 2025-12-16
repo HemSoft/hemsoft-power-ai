@@ -7,11 +7,10 @@
     Supports multiple run modes:
     - Default: Interactive chat mode
     - spam: Spam filter agent mode
-    - agents: Start Azure Functions A2A agents
     - aspire: Start standalone Aspire Dashboard for telemetry visualization
 
 .PARAMETER Mode
-    The run mode: 'chat' (default), 'spam', 'agents', or 'aspire'
+    The run mode: 'chat' (default), 'spam', or 'aspire'
 
 .EXAMPLE
     ./run.ps1
@@ -22,59 +21,19 @@
     Runs the spam filter agent.
 
 .EXAMPLE
-    ./run.ps1 agents
-    Starts the Azure Functions A2A agents (ResearchAgent).
-    Requires Azure Functions Core Tools v4.
-
-.EXAMPLE
     ./run.ps1 aspire
     Starts the Aspire Dashboard for telemetry visualization.
     Run './run.ps1' or './run.ps1 spam' in another terminal to send telemetry.
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('chat', 'spam', 'agents', 'aspire')]
+    [ValidateSet('chat', 'spam', 'aspire')]
     [string]$Mode = 'chat'
 )
 
 $ErrorActionPreference = 'Stop'
 
 switch ($Mode) {
-    'agents' {
-        Write-Host "Starting Azure Functions A2A Agents..." -ForegroundColor Cyan
-        Write-Host ""
-
-        # Check if Azure Functions Core Tools is available
-        $funcAvailable = Get-Command func -ErrorAction SilentlyContinue
-        if (-not $funcAvailable) {
-            Write-Host "Azure Functions Core Tools is required." -ForegroundColor Red
-            Write-Host "Install with: npm install -g azure-functions-core-tools@4" -ForegroundColor Yellow
-            Write-Host "Or: winget install Microsoft.Azure.FunctionsCoreTools" -ForegroundColor Yellow
-            exit 1
-        }
-
-        # Check if Azurite is running (required for local storage)
-        $azuriteRunning = Test-NetConnection -ComputerName localhost -Port 10000 -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
-        if (-not $azuriteRunning.TcpTestSucceeded) {
-            Write-Host "Warning: Azurite does not appear to be running on port 10000." -ForegroundColor Yellow
-            Write-Host "Start Azurite with: azurite --silent" -ForegroundColor Yellow
-            Write-Host "Or install: npm install -g azurite" -ForegroundColor Yellow
-            Write-Host ""
-        }
-
-        Write-Host "Endpoints:" -ForegroundColor Green
-        Write-Host "  GET  http://localhost:7071/.well-known/agent.json  (Agent discovery)" -ForegroundColor Gray
-        Write-Host "  POST http://localhost:7071/api/research            (ResearchAgent)" -ForegroundColor Gray
-        Write-Host ""
-
-        Push-Location $PSScriptRoot/src/HemSoft.PowerAI.Agents
-        try {
-            func start
-        }
-        finally {
-            Pop-Location
-        }
-    }
     'aspire' {
         Write-Host "Starting Aspire Dashboard (standalone) for observability..." -ForegroundColor Cyan
         Write-Host "Run '.\run.ps1' or '.\run.ps1 spam' in another terminal to send telemetry here." -ForegroundColor Yellow

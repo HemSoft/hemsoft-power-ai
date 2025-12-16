@@ -26,21 +26,25 @@ internal static class CoordinatorAgent
 
         ## Available Agents (use as tools):
         - ResearchAgent: Performs web research and synthesizes information
+        - MailAgent: Handles email operations (read, send, search, delete, spam management)
 
         ## Your workflow:
         1. Analyze the incoming task to understand what's needed
         2. Delegate research tasks to ResearchAgent
-        3. Use file tools to read/write files when needed
-        4. Synthesize the results into a coherent response
+        3. Delegate email tasks to MailAgent
+        4. Use file tools to read/write files when needed
+        5. Synthesize the results into a coherent response
 
         ## Guidelines:
         - For research tasks, ALWAYS use ResearchAgent
+        - For email tasks, ALWAYS use MailAgent
         - Handle simple questions directly without delegation
         - Be specific when delegating tasks to agents
         - When asked to write reports/files, use ModifyFileSystem with mode='write'
 
         ## Tools Available:
         - ResearchAgent: Use when web research is needed
+        - MailAgent: Use for all email operations (inbox, read, send, search, delete, move, spam)
         - QueryFileSystem: Read files (mode='read'), list directories (mode='list'), get file info (mode='info')
         - ModifyFileSystem: Write files (mode='write'), create folders (mode='mkdir'), delete (mode='delete')
 
@@ -51,18 +55,20 @@ internal static class CoordinatorAgent
         """;
 
     /// <summary>
-    /// Creates a new CoordinatorAgent as an AIAgent using a local ResearchAgent.
-    /// The ResearchAgent is passed as a tool, enabling the agent-as-tool pattern.
+    /// Creates a new CoordinatorAgent as an AIAgent using local agents.
+    /// The agents are passed as tools, enabling the agent-as-tool pattern.
     /// </summary>
-    /// <param name="researchAgent">The ResearchAgent to use as a tool for delegation.</param>
+    /// <param name="researchAgent">The ResearchAgent to use as a tool for research tasks.</param>
+    /// <param name="mailAgent">The MailAgent to use as a tool for email tasks.</param>
     /// <returns>An AIAgent configured for coordination tasks.</returns>
-    public static AIAgent Create(AIAgent researchAgent)
+    public static AIAgent Create(AIAgent researchAgent, AIAgent mailAgent)
     {
-        // The research agent IS the tool - this is the key MS Agent Framework pattern
-        // Use AsAIFunction() to convert the AIAgent to an AITool
+        // The agents ARE the tools - this is the key MS Agent Framework pattern
+        // Use AsAIFunction() to convert each AIAgent to an AITool
         IList<AITool> tools =
         [
             researchAgent.AsAIFunction(),  // Agent-as-tool!
+            mailAgent.AsAIFunction(),      // Agent-as-tool!
             AIFunctionFactory.Create(FileTools.QueryFileSystem),
             AIFunctionFactory.Create(FileTools.ModifyFileSystem),
         ];
@@ -79,12 +85,14 @@ internal static class CoordinatorAgent
     /// Creates a new CoordinatorAgent that delegates to a remote ResearchAgent via A2A protocol.
     /// </summary>
     /// <param name="remoteResearchTool">The AITool wrapping the remote ResearchAgent.</param>
-    /// <returns>An AIAgent configured for coordination tasks with remote delegation.</returns>
-    public static AIAgent CreateWithRemoteAgent(AITool remoteResearchTool)
+    /// <param name="mailAgent">The MailAgent to use as a tool for email tasks.</param>
+    /// <returns>An AIAgent configured for coordination tasks with remote research delegation.</returns>
+    public static AIAgent CreateWithRemoteAgent(AITool remoteResearchTool, AIAgent mailAgent)
     {
         IList<AITool> tools =
         [
-            remoteResearchTool,  // Remote agent-as-tool via A2A!
+            remoteResearchTool,           // Remote agent-as-tool via A2A!
+            mailAgent.AsAIFunction(),     // Local mail agent-as-tool
             AIFunctionFactory.Create(FileTools.QueryFileSystem),
             AIFunctionFactory.Create(FileTools.ModifyFileSystem),
         ];

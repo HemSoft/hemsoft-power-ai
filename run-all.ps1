@@ -6,7 +6,7 @@
 .DESCRIPTION
     Launches all components in the correct order:
     1. Aspire Dashboard (Docker container for telemetry)
-    2. Azure Functions A2A Agents (separate terminal)
+    2. A2A Agent Host (ASP.NET Core - separate terminal)
     3. Console App (current terminal)
 
 .PARAMETER Mode
@@ -16,7 +16,7 @@
     Skip starting the Aspire Dashboard
 
 .PARAMETER SkipAgents
-    Skip starting the Azure Functions agents
+    Skip starting the A2A Agent Host
 
 .EXAMPLE
     ./run-all.ps1
@@ -75,37 +75,24 @@ else {
     Write-Host "[1/3] Skipping Aspire Dashboard" -ForegroundColor DarkGray
 }
 
-# Step 2: Start Azure Functions Agents
+# Step 2: Start A2A Agent Host
 if (-not $SkipAgents) {
-    Write-Host "[2/3] Starting Azure Functions A2A Agents..." -ForegroundColor Yellow
+    Write-Host "[2/3] Starting A2A Agent Host..." -ForegroundColor Yellow
 
-    $funcAvailable = Get-Command func -ErrorAction SilentlyContinue
-    if (-not $funcAvailable) {
-        Write-Host "  Azure Functions Core Tools not found, skipping agents." -ForegroundColor Red
-        Write-Host "  Install with: npm install -g azure-functions-core-tools@4" -ForegroundColor DarkYellow
-    }
-    else {
-        # Check Azurite
-        $azuriteRunning = Test-NetConnection -ComputerName localhost -Port 10000 -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
-        if (-not $azuriteRunning.TcpTestSucceeded) {
-            Write-Host "  Warning: Azurite not detected on port 10000" -ForegroundColor DarkYellow
-        }
+    # Start agent host in new terminal
+    $agentHostPath = Join-Path $ScriptRoot "src/HemSoft.PowerAI.AgentHost"
+    Start-Process pwsh -ArgumentList "-NoExit", "-Command", "Set-Location '$agentHostPath'; dotnet run"
 
-        # Start agents in new terminal
-        $agentsPath = Join-Path $ScriptRoot "src/HemSoft.PowerAI.Agents"
-        Start-Process pwsh -ArgumentList "-NoExit", "-Command", "Set-Location '$agentsPath'; func start"
+    Write-Host "  Agent Host started in new terminal" -ForegroundColor Green
+    Write-Host "  Agent Card: http://localhost:5001/.well-known/agent-card.json" -ForegroundColor Gray
+    Write-Host "  Health:     http://localhost:5001/health" -ForegroundColor Gray
 
-        Write-Host "  Agents started in new terminal" -ForegroundColor Green
-        Write-Host "  Agent Card: http://localhost:7071/.well-known/agent.json" -ForegroundColor Gray
-        Write-Host "  Research:   http://localhost:7071/api/research" -ForegroundColor Gray
-
-        # Give agents time to start
-        Write-Host "  Waiting 5 seconds for agents to initialize..." -ForegroundColor DarkGray
-        Start-Sleep -Seconds 5
-    }
+    # Give agent host time to start
+    Write-Host "  Waiting 5 seconds for agent host to initialize..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds 5
 }
 else {
-    Write-Host "[2/3] Skipping Azure Functions Agents" -ForegroundColor DarkGray
+    Write-Host "[2/3] Skipping A2A Agent Host" -ForegroundColor DarkGray
 }
 
 # Step 3: Start Console App
@@ -116,6 +103,7 @@ Write-Host ""
 
 $env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4317"
 $env:OTEL_SERVICE_NAME = if ($Mode -eq 'spam') { "HemSoft.PowerAI.SpamFilter" } else { "HemSoft.PowerAI.Console" }
+$env:RESEARCH_AGENT_URL = "http://localhost:5001/"
 
 Push-Location $ScriptRoot/src/HemSoft.PowerAI.Console
 try {

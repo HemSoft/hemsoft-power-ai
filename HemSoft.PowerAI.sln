@@ -13,7 +13,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HemSoft.PowerAI.Console.Tes
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HemSoft.PowerAI.Shared", "src\HemSoft.PowerAI.Shared\HemSoft.PowerAI.Shared.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HemSoft.PowerAI.Agents", "src\HemSoft.PowerAI.Agents\HemSoft.PowerAI.Agents.csproj", "{B2C3D4E5-F6A7-8901-BCDE-F23456789012}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HemSoft.PowerAI.AgentHost", "src\HemSoft.PowerAI.AgentHost\HemSoft.PowerAI.AgentHost.csproj", "{DA130567-C42D-4976-B57A-B93C5ECFA85F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -61,18 +61,18 @@ Global
 		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x64.Build.0 = Release|Any CPU
 		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x86.ActiveCfg = Release|Any CPU
 		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x86.Build.0 = Release|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Debug|x64.Build.0 = Debug|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Debug|x86.Build.0 = Debug|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Release|Any CPU.Build.0 = Release|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Release|x64.ActiveCfg = Release|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Release|x64.Build.0 = Release|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Release|x86.ActiveCfg = Release|Any CPU
-		{B2C3D4E5-F6A7-8901-BCDE-F23456789012}.Release|x86.Build.0 = Release|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Debug|x64.Build.0 = Debug|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Debug|x86.Build.0 = Debug|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Release|x64.ActiveCfg = Release|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Release|x64.Build.0 = Release|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Release|x86.ActiveCfg = Release|Any CPU
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -80,5 +80,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{E8B1E60E-8650-4096-8BA4-4E1D75EE2931} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{74C473A8-474C-4A07-91F0-74A957B7B408} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{DA130567-C42D-4976-B57A-B93C5ECFA85F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

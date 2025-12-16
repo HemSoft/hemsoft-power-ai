@@ -5,7 +5,6 @@
 namespace HemSoft.PowerAI.Console.Hosting;
 
 using System.Diagnostics.CodeAnalysis;
-
 using System.Globalization;
 
 using A2A;
@@ -14,7 +13,8 @@ using A2A.AspNetCore;
 using Microsoft.Agents.AI;
 
 /// <summary>
-/// Hosts an AIAgent as an A2A server, enabling remote agent-to-agent communication.
+/// Hosts an AIAgent as an A2A server using the MapA2A pattern from MS Agent Framework.
+/// Enables remote agent-to-agent communication via A2A protocol.
 /// </summary>
 /// <param name="agent">The AIAgent to host.</param>
 /// <param name="agentCard">The AgentCard describing the agent's capabilities.</param>
@@ -46,11 +46,40 @@ internal sealed class A2AAgentHost(
 
         this.app = builder.Build();
 
-        // Create the task manager with our agent's handler
-        var taskManager = new TaskManager();
-        this.AttachAgentHandlers(taskManager);
+        // Create task manager with agent handlers using object initializer pattern
+        var taskManager = new TaskManager
+        {
+            OnMessageReceived = async (messageSendParams, ct) =>
+            {
+                // Extract the text from the incoming message
+                var userText = string.Join(
+                    '\n',
+                    messageSendParams.Message.Parts
+                        .OfType<TextPart>()
+                        .Select(p => p.Text));
 
-        // Map the A2A endpoints
+                // Run the AIAgent with the user's message
+                var agentResponse = await agent.RunAsync(userText, cancellationToken: ct).ConfigureAwait(false);
+
+                // Return the response as an AgentMessage
+                return new AgentMessage
+                {
+                    Role = MessageRole.Agent,
+                    MessageId = Guid.NewGuid().ToString(),
+                    ContextId = messageSendParams.Message.ContextId,
+                    Parts = [new TextPart { Text = agentResponse.Text ?? "No response generated." }],
+                };
+            },
+            OnAgentCardQuery = (agentUrl, _) =>
+            {
+                // Update the URL in the card to match the actual hosting URL
+                var card = agentCard;
+                card.Url = agentUrl;
+                return Task.FromResult(card);
+            },
+        };
+
+        // Map the A2A endpoints using the framework pattern
         _ = this.app.MapA2A(taskManager, routePath);
         _ = this.app.MapWellKnownAgentCard(taskManager, routePath);
 
@@ -91,40 +120,5 @@ internal sealed class A2AAgentHost(
             await this.app.DisposeAsync().ConfigureAwait(false);
             this.app = null;
         }
-    }
-
-    private void AttachAgentHandlers(TaskManager taskManager)
-    {
-        // Handle incoming messages by delegating to the AIAgent
-        taskManager.OnMessageReceived = async (messageSendParams, ct) =>
-        {
-            // Extract the text from the incoming message
-            var userText = string.Join(
-                '\n',
-                messageSendParams.Message.Parts
-                    .OfType<TextPart>()
-                    .Select(p => p.Text));
-
-            // Run the AIAgent with the user's message
-            var agentResponse = await agent.RunAsync(userText, cancellationToken: ct).ConfigureAwait(false);
-
-            // Return the response as an AgentMessage
-            return new AgentMessage
-            {
-                Role = MessageRole.Agent,
-                MessageId = Guid.NewGuid().ToString(),
-                ContextId = messageSendParams.Message.ContextId,
-                Parts = [new TextPart { Text = agentResponse.Text ?? "No response generated." }],
-            };
-        };
-
-        // Provide the agent card on discovery requests
-        taskManager.OnAgentCardQuery = (agentUrl, _) =>
-        {
-            // Update the URL in the card to match the actual hosting URL
-            var card = agentCard;
-            card.Url = agentUrl;
-            return Task.FromResult(card);
-        };
     }
 }

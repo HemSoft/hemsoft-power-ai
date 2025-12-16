@@ -118,6 +118,7 @@ internal sealed partial class TelemetrySetup : IDisposable
             .AddSource("SpamFilterAgent")
             .AddSource("HemSoft.PowerAI.GraphApi")
             .AddSource("HemSoft.PowerAI.LLM")
+            .AddSource("HemSoft.PowerAI.FunctionCalls")
             .AddSource("*Microsoft.Agents.AI")
             .AddHttpClientInstrumentation()
             .AddProcessor(fileProcessor);

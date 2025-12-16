@@ -25,25 +25,18 @@ public static class ResearchAgent
 
     private const string Instructions = """
         You are a research specialist agent. Your job is to gather information from the web
-        and synthesize it into clear, actionable insights. You can also save your findings to files.
+        and synthesize it into clear, actionable insights.
 
         ## Your capabilities:
         1. Web search using the WebSearchAsync tool
         2. Synthesizing information from multiple sources
         3. Providing structured summaries with key findings
-        4. Reading and writing files using QueryFileSystem and ModifyFileSystem tools
 
         ## Your workflow:
         1. Analyze the research task to identify key search queries
         2. Perform targeted web searches (usually 2-3 searches for comprehensive coverage)
         3. Synthesize the findings into a clear summary
-        4. If requested, save the report to a file using ModifyFileSystem with mode 'write'
-        5. Include relevant sources and citations
-
-        ## File operations:
-        - To write a file: ModifyFileSystem(mode: "write", path: "C:\path\file.md", destination: "content here")
-        - To read a file: QueryFileSystem(mode: "read", path: "C:\path\file.md")
-        - To list files: QueryFileSystem(mode: "list", path: "C:\path")
+        4. Return results to the caller (do NOT write files - the coordinator handles that)
 
         ## Output format:
         Always structure your response as:
@@ -74,13 +67,12 @@ public static class ResearchAgent
 
     private static AIAgent CreateCore(string modelId)
     {
+        // ResearchAgent only has web search - file operations are handled by the local Coordinator
+        // This ensures files are written on the client machine, not the agent host
         IList<AITool> tools =
         [
             AIFunctionFactory.Create((string query, int maxResults) =>
                 WebSearchTools.WebSearchAsync(query, maxResults)),
-            AIFunctionFactory.Create(FileTools.QueryFileSystem),
-            AIFunctionFactory.Create((string mode, string path, string destination) =>
-                FileTools.ModifyFileSystem(mode, path, destination)),
         ];
 
         return AgentFactory.CreateAgent(

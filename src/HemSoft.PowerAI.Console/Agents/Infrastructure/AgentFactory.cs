@@ -7,6 +7,8 @@ namespace HemSoft.PowerAI.Console.Agents.Infrastructure;
 using System.ClientModel;
 using System.Diagnostics.CodeAnalysis;
 
+using HemSoft.PowerAI.Console.Telemetry;
+
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -45,6 +47,7 @@ internal static class AgentFactory
             .GetChatClient(modelId)
             .AsIChatClient()
             .AsBuilder()
+            .UseFunctionCallLogging() // Add telemetry middleware
             .UseFunctionInvocation()
             .Build();
 #pragma warning restore IDISP004

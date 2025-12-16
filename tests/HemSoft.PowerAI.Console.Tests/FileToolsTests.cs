@@ -622,4 +622,112 @@ public sealed class FileToolsTests : IDisposable
         // Assert - File.Exists returns false for directories, so returns "File not found"
         Assert.Contains("File not found", result, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies path sanitization removes PowerShell encoding flags from paths.
+    /// This tests the fix for LLMs appending shell syntax to file paths.
+    /// </summary>
+    [Fact]
+    public void PathSanitizationRemovesEncodingFlag()
+    {
+        // Arrange - LLM sent path with PowerShell encoding parameter
+        var pathWithFlag = Path.Combine(this.testDir, "test.md") + " -Encoding utf8";
+        var expectedPath = Path.Combine(this.testDir, "test.md");
+        const string Content = "Test content";
+
+        // Act
+        var result = FileTools.ModifyFileSystem("write", pathWithFlag, Content);
+
+        // Assert - Should have written to sanitized path
+        Assert.Contains("Written", result, StringComparison.Ordinal);
+        Assert.True(File.Exists(expectedPath));
+        Assert.Equal(Content, File.ReadAllText(expectedPath));
+    }
+
+    /// <summary>
+    /// Verifies path sanitization removes Force flag.
+    /// </summary>
+    [Fact]
+    public void PathSanitizationRemovesForceFlag()
+    {
+        // Arrange
+        var pathWithFlag = Path.Combine(this.testDir, "test.txt") + " -Force";
+        var expectedPath = Path.Combine(this.testDir, "test.txt");
+
+        // Act
+        _ = FileTools.ModifyFileSystem("write", pathWithFlag, "content");
+
+        // Assert
+        Assert.True(File.Exists(expectedPath));
+    }
+
+    /// <summary>
+    /// Verifies path sanitization removes redirect operator.
+    /// </summary>
+    [Fact]
+    public void PathSanitizationRemovesRedirectOperator()
+    {
+        // Arrange
+        var pathWithOperator = Path.Combine(this.testDir, "out.txt") + " > other.txt";
+        var expectedPath = Path.Combine(this.testDir, "out.txt");
+
+        // Act
+        _ = FileTools.ModifyFileSystem("write", pathWithOperator, "content");
+
+        // Assert
+        Assert.True(File.Exists(expectedPath));
+        Assert.False(File.Exists(Path.Combine(this.testDir, "other.txt")));
+    }
+
+    /// <summary>
+    /// Verifies path sanitization removes pipe operator.
+    /// </summary>
+    [Fact]
+    public void PathSanitizationRemovesPipeOperator()
+    {
+        // Arrange
+        var pathWithPipe = Path.Combine(this.testDir, "piped.txt") + " | Out-Null";
+        var expectedPath = Path.Combine(this.testDir, "piped.txt");
+
+        // Act
+        _ = FileTools.ModifyFileSystem("write", pathWithPipe, "content");
+
+        // Assert
+        Assert.True(File.Exists(expectedPath));
+    }
+
+    /// <summary>
+    /// Verifies path sanitization removes surrounding quotes.
+    /// </summary>
+    [Fact]
+    public void PathSanitizationRemovesQuotes()
+    {
+        // Arrange - LLM sent path with quotes
+        var quotedPath = $"\"{Path.Combine(this.testDir, "quoted.txt")}\"";
+        var expectedPath = Path.Combine(this.testDir, "quoted.txt");
+
+        // Act
+        _ = FileTools.ModifyFileSystem("write", quotedPath, "content");
+
+        // Assert
+        Assert.True(File.Exists(expectedPath));
+    }
+
+    /// <summary>
+    /// Verifies path sanitization also works for QueryFileSystem.
+    /// </summary>
+    [Fact]
+    public void PathSanitizationWorksForQuery()
+    {
+        // Arrange
+        var testFile = Path.Combine(this.testDir, "query-test.txt");
+        File.WriteAllText(testFile, "Hello World");
+        var pathWithFlag = testFile + " -NoNewline";
+
+        // Act
+        var result = FileTools.QueryFileSystem("read", pathWithFlag);
+
+        // Assert
+        Assert.Equal("Hello World", result);
+    }
 }

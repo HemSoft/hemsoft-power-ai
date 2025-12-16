@@ -93,6 +93,7 @@ internal static partial class Program
             "DISTRIBUTED" => await RunDistributedCoordinatorAsync(a2aSettings, telemetry).ConfigureAwait(false),
             "COORDINATE" => await RunCoordinatorAgentAsync(
                 a2aSettings,
+                spamSettings,
                 telemetry,
                 args.Length > 1 ? string.Join(' ', args.Skip(1)) : null).ConfigureAwait(false),
             _ => await RunSinglePromptAsync(string.Join(' ', args), spamSettings, telemetry).ConfigureAwait(false),
@@ -309,6 +310,7 @@ internal static partial class Program
 
     private static async Task<int> RunCoordinatorAgentAsync(
         Configuration.A2ASettings a2aSettings,
+        SpamFilterSettings spamSettings,
         TelemetrySetup telemetry,
         string? initialPrompt = null)
     {
@@ -322,8 +324,15 @@ internal static partial class Program
         {
             DisplayCoordinatorHeader();
 
-            var coordinatorAgent = await CreateCoordinatorWithRemoteOrLocalAgent(a2aSettings, cts.Token)
-                .ConfigureAwait(false);
+            // Initialize Graph client and spam storage for MailAgent
+            var graphClientProvider = new DefaultGraphClientProvider();
+            var spamStorageService = new SpamStorageService(spamSettings);
+
+            var coordinatorAgent = await CreateCoordinatorWithRemoteOrLocalAgent(
+                a2aSettings,
+                graphClientProvider,
+                spamStorageService,
+                cts.Token).ConfigureAwait(false);
 
             AnsiConsole.MarkupLine("[dim]Commands: exit[/]\n");
 
@@ -341,7 +350,6 @@ internal static partial class Program
         }
         finally
         {
-            Agents.Infrastructure.RemoteAgentTool.ClearRemoteAgent();
             System.Console.CancelKeyPress -= cancelHandler;
         }
     }
@@ -354,32 +362,37 @@ internal static partial class Program
 
     private static async Task<AIAgent> CreateCoordinatorWithRemoteOrLocalAgent(
         Configuration.A2ASettings a2aSettings,
+        IGraphClientProvider graphClientProvider,
+        SpamStorageService? spamStorage,
         CancellationToken cancellationToken)
     {
         var envUrl = Environment.GetEnvironmentVariable(ResearchAgentUrlEnvVar);
         var researchAgentUrl = !string.IsNullOrEmpty(envUrl) ? new Uri(envUrl) : a2aSettings.DefaultResearchAgentUrl;
 
+        // Create MailAgent - always local since it needs Graph client
+        var mailAgent = MailAgent.Create(graphClientProvider, spamStorage);
+
         try
         {
             AnsiConsole.MarkupLine($"[dim]Attempting to connect to Azure Function at {researchAgentUrl}...[/]");
 
-            var remoteAgent = await Agents.Infrastructure.A2AAgentClient
+            var (remoteAgent, agentCard) = await Agents.Infrastructure.A2AAgentClient
                 .ConnectAsync(researchAgentUrl, cancellationToken)
                 .ConfigureAwait(false);
 
-            Agents.Infrastructure.RemoteAgentTool.SetRemoteAgent(remoteAgent);
-            var remoteResearchTool = Agents.Infrastructure.RemoteAgentTool.CreateTool();
+            // Use AsAIFunction() directly - the MS Agent Framework pattern
+            var remoteResearchTool = remoteAgent.AsAIFunction();
 
-            AnsiConsole.MarkupLine($"[green]✓ Connected to remote ResearchAgent: {remoteAgent.Name}[/]");
+            AnsiConsole.MarkupLine($"[green]✓ Connected to remote ResearchAgent: {agentCard.Name}[/]");
             AnsiConsole.MarkupLine("[dim]Research tasks will be delegated to Azure Function[/]");
 
-            return CoordinatorAgent.CreateWithRemoteAgent(remoteResearchTool);
+            return CoordinatorAgent.CreateWithRemoteAgent(remoteResearchTool, mailAgent);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
             AnsiConsole.MarkupLine($"[yellow]⚠ Could not connect to Azure Function: {Markup.Escape(ex.Message)}[/]");
             AnsiConsole.MarkupLine("[dim]Using local ResearchAgent instead[/]");
-            return CoordinatorAgent.Create(ResearchAgent.Create());
+            return CoordinatorAgent.Create(ResearchAgent.Create(), mailAgent);
         }
     }
 
@@ -460,20 +473,22 @@ internal static partial class Program
             AnsiConsole.MarkupLine($"[dim]Research Agent URL: {researchAgentUrl}[/]");
             AnsiConsole.MarkupLine("[dim]Commands: exit[/]\n");
 
-            var remoteResearchAgent = await ConnectToRemoteAgentAsync(researchAgentUrl.ToString(), cts.Token)
+            var remoteResult = await ConnectToRemoteAgentAsync(researchAgentUrl.ToString(), cts.Token)
                 .ConfigureAwait(false);
 
-            if (remoteResearchAgent is null)
+            if (remoteResult is null)
             {
                 AnsiConsole.MarkupLine("[red]Failed to connect to remote research agent.[/]");
                 _ = activity?.SetStatus(ActivityStatusCode.Error, "Failed to connect to remote research agent");
                 return 1;
             }
 
-            AnsiConsole.MarkupLine($"[green]Connected to {remoteResearchAgent.Name}[/]");
-            AnsiConsole.MarkupLine($"[dim]{remoteResearchAgent.Description}[/]\n");
+            var (remoteAgent, agentCard) = remoteResult.Value;
 
-            await RunDistributedChatLoopAsync(remoteResearchAgent, cts.Token).ConfigureAwait(false);
+            AnsiConsole.MarkupLine($"[green]Connected to {agentCard.Name}[/]");
+            AnsiConsole.MarkupLine($"[dim]{agentCard.Description}[/]\n");
+
+            await RunDistributedChatLoopAsync(remoteAgent, agentCard.Name, cts.Token).ConfigureAwait(false);
 
             AnsiConsole.MarkupLine("[dim]Distributed coordinator session ended.[/]");
             _ = activity?.SetStatus(ActivityStatusCode.Ok);
@@ -505,28 +520,29 @@ internal static partial class Program
         AnsiConsole.MarkupLine("[dim]Connects to remote agents using Agent-to-Agent protocol[/]\n");
     }
 
-    private static async Task<Agents.Infrastructure.A2AAgentClient?> ConnectToRemoteAgentAsync(
+    private static async Task<(AIAgent Agent, A2A.AgentCard Card)?> ConnectToRemoteAgentAsync(
         string url,
         CancellationToken cancellationToken)
     {
-        Agents.Infrastructure.A2AAgentClient? client = null;
+        (AIAgent Agent, A2A.AgentCard Card)? result = null;
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .SpinnerStyle(Style.Parse("magenta"))
             .StartAsync("Connecting to remote research agent...", async _ =>
             {
-                client = await Agents.Infrastructure.A2AAgentClient
+                result = await Agents.Infrastructure.A2AAgentClient
                     .ConnectAsync(new Uri(url), cancellationToken)
                     .ConfigureAwait(false);
             })
             .ConfigureAwait(false);
 
-        return client;
+        return result;
     }
 
     private static async Task RunDistributedChatLoopAsync(
-        Agents.Infrastructure.A2AAgentClient remoteAgent,
+        AIAgent remoteAgent,
+        string agentName,
         CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -545,20 +561,20 @@ internal static partial class Program
                 break;
             }
 
-            string? response = null;
+            AgentRunResponse? response = null;
 
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .SpinnerStyle(Style.Parse("magenta"))
                 .StartAsync("Sending to remote agent...", async _ =>
                 {
-                    response = await remoteAgent.SendMessageAsync(input, cancellationToken)
+                    response = await remoteAgent.RunAsync(input, cancellationToken: cancellationToken)
                         .ConfigureAwait(false);
                 })
                 .ConfigureAwait(false);
 
-            AnsiConsole.Write(new Panel(Markup.Escape(response ?? "No response"))
-                .Header($"[magenta]{remoteAgent.Name}[/]")
+            AnsiConsole.Write(new Panel(Markup.Escape(response?.Text ?? "No response"))
+                .Header($"[magenta]{agentName}[/]")
                 .Border(BoxBorder.Rounded)
                 .BorderColor(Color.Magenta1));
             AnsiConsole.WriteLine();
@@ -889,7 +905,11 @@ internal static partial class Program
                 return true;
 
             case ChatCommand.Coordinate:
-                _ = await RunCoordinatorAgentAsync(context.A2ASettings, context.Telemetry, argument).ConfigureAwait(false);
+                _ = await RunCoordinatorAgentAsync(
+                    context.A2ASettings,
+                    context.SpamSettings,
+                    context.Telemetry,
+                    argument).ConfigureAwait(false);
                 AnsiConsole.MarkupLine(ReturnedToChatModeMessage);
                 return true;
 

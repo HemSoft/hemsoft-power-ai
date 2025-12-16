@@ -8,37 +8,23 @@ using System.Diagnostics.CodeAnalysis;
 
 using A2A;
 
+using Microsoft.Agents.AI;
+
 /// <summary>
 /// Client for connecting to remote A2A agents.
-/// Wraps an A2A client to provide a simple interface for agent communication.
+/// Uses the MS Agent Framework A2ACardResolver pattern to return AIAgent directly.
 /// </summary>
-/// <param name="client">The underlying A2A client for communication.</param>
-/// <param name="agentCard">The agent card describing the remote agent's capabilities.</param>
 [ExcludeFromCodeCoverage(Justification = "A2A client requires real network connection to A2A server for testing")]
-internal sealed class A2AAgentClient(A2AClient client, AgentCard agentCard)
+internal static class A2AAgentClient
 {
     /// <summary>
-    /// Gets the agent card describing the remote agent's capabilities.
-    /// </summary>
-    public AgentCard AgentCard { get; } = agentCard;
-
-    /// <summary>
-    /// Gets the name of the connected agent.
-    /// </summary>
-    public string Name => this.AgentCard.Name;
-
-    /// <summary>
-    /// Gets the description of the connected agent.
-    /// </summary>
-    public string Description => this.AgentCard.Description;
-
-    /// <summary>
-    /// Connects to a remote A2A agent at the specified URL.
+    /// Connects to a remote A2A agent at the specified URL and returns an AIAgent.
+    /// Uses the MS Agent Framework A2ACardResolver to resolve the agent.
     /// </summary>
     /// <param name="agentUrl">The URL of the remote A2A agent.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>An A2AAgentClient connected to the remote agent.</returns>
-    public static async System.Threading.Tasks.Task<A2AAgentClient> ConnectAsync(
+    /// <returns>A tuple containing the AIAgent and the AgentCard describing the remote agent.</returns>
+    public static async Task<(AIAgent Agent, AgentCard Card)> ConnectAsync(
         Uri agentUrl,
         CancellationToken cancellationToken = default)
     {
@@ -46,59 +32,12 @@ internal sealed class A2AAgentClient(A2AClient client, AgentCard agentCard)
         var cardResolver = new A2ACardResolver(agentUrl);
         var resolvedCard = await cardResolver.GetAgentCardAsync(cancellationToken).ConfigureAwait(false);
 
-        // Create the client connected to the agent's URL
-        var resolvedClient = new A2AClient(new Uri(resolvedCard.Url));
+        // Get AIAgent directly using MS Agent Framework A2A extension
+        // Note: The extension method doesn't support CancellationToken
+#pragma warning disable CA2016, MA0040 // Forward the CancellationToken parameter
+        var agent = await cardResolver.GetAIAgentAsync().ConfigureAwait(false);
+#pragma warning restore CA2016, MA0040
 
-        return new A2AAgentClient(resolvedClient, resolvedCard);
-    }
-
-    /// <summary>
-    /// Sends a message to the remote agent and returns the response.
-    /// </summary>
-    /// <param name="message">The message to send.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The agent's response text.</returns>
-    public async System.Threading.Tasks.Task<string> SendMessageAsync(
-        string message,
-        CancellationToken cancellationToken = default)
-    {
-        var response = await client.SendMessageAsync(
-            new MessageSendParams
-            {
-                Message = new AgentMessage
-                {
-                    Role = MessageRole.User,
-                    MessageId = Guid.NewGuid().ToString(),
-                    Parts = [new TextPart { Text = message }],
-                },
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        // Extract text from the response
-        return ExtractResponseText(response);
-    }
-
-    private static string ExtractResponseText(A2AResponse response)
-    {
-        // Handle different response types
-        if (response is AgentMessage agentMessage)
-        {
-            return string.Join(
-                '\n',
-                agentMessage.Parts
-                    .OfType<TextPart>()
-                    .Select(p => p.Text));
-        }
-
-        if (response is AgentTask task && task.Artifacts != null)
-        {
-            var texts = task.Artifacts
-                .SelectMany(a => a.Parts)
-                .OfType<TextPart>()
-                .Select(p => p.Text);
-            return string.Join('\n', texts);
-        }
-
-        return "No text response received.";
+        return (agent, resolvedCard);
     }
 }

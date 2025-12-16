@@ -1,7 +1,7 @@
 ---
 title: "AGENTS.md"
-version: "1.0.17"
-lastModified: "2025-11-30"
+version: "1.0.18"
+lastModified: "2025-12-16"
 author: "Franz Hemmer"
 purpose: "Instructions for AI, LLM's, tools and agents."
 ---
@@ -100,3 +100,10 @@ Read all the instruction files below and understand and follow them:
 | [TESTING.md](./agents/global/TESTING.md) | Guidance for writing and running tests |
 | [TOOL-USE.md](./agents/global/TOOL-USE.md) | Guidance on using the terminal, MCP servers, and external tools |
 | [WORKFLOW.md](./agents/global/WORKFLOW.md) | Step-by-step operational workflow for problem solving and implementation |
+
+## Research & Reference Material
+
+| File | Purpose |
+|------|---------|
+| [REFERENCE-MATERIAL.md](./research-material/REFERENCE-MATERIAL.md) | MS Agent Framework patterns, A2A protocol, multi-agent orchestration examples |
+| [PLAN.md](./PLAN.md) | Current migration plan and implementation status |
