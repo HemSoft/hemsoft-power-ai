@@ -294,7 +294,7 @@ var workflow = MagenticBuilder()
 A2A enables standardized communication between agents:
 
 - **Agent discovery** through agent cards
-- **Message-based communication** 
+- **Message-based communication**
 - **Long-running processes** via tasks
 - **Cross-platform interoperability**
 
@@ -445,7 +445,7 @@ Current pattern (manual):
 ```csharp
 [Function("ResearchAgentCard")]
 public Task<HttpResponseData> GetAgentCardAsync(
-    [HttpTrigger(AuthorizationLevel.Anonymous, "get", 
+    [HttpTrigger(AuthorizationLevel.Anonymous, "get",
         Route = ".well-known/agent-card.json")]
     HttpRequestData req)
 {
@@ -657,7 +657,7 @@ ChatClientAgent translationAgent = chatClient.CreateAIAgent(
 
 // Chain agents sequentially
 Workflow workflow = AgentWorkflowBuilder.BuildSequential(
-    summaryAgent, 
+    summaryAgent,
     translationAgent);
 
 // Execute
@@ -689,7 +689,7 @@ async ValueTask<object?> FunctionCallMiddleware(
     Console.WriteLine($"Tool Call: '{context.Function.Name}'");
     if (context.Arguments.Count > 0)
     {
-        var args = string.Join(",", 
+        var args = string.Join(",",
             context.Arguments.Select(x => $"[{x.Key} = {x.Value}]"));
         Console.WriteLine($"Args: {args}");
     }
@@ -790,7 +790,7 @@ AIAgent agent = baseAgent
         // Log inputs
         logger.LogInformation("Agent input: {Input}", ctx.Messages);
         await next(ctx);
-        // Log outputs  
+        // Log outputs
         logger.LogInformation("Agent output: {Output}", ctx.Response);
     })
     .Build();
