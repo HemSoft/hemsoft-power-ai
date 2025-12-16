@@ -9,34 +9,31 @@ using System.Diagnostics.CodeAnalysis;
 using Spectre.Console;
 
 /// <summary>
-/// Provides interactive command input with autocomplete suggestions.
+/// Provides interactive command input with agent menu support.
 /// </summary>
 [ExcludeFromCodeCoverage(Justification = "Interactive console input cannot be unit tested")]
 internal static class CommandInputService
 {
-    private const string InputPrompt = "[yellow]You:[/] ";
-
-    private static readonly Dictionary<string, string> Commands = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["/clear"] = "Clear history",
-        ["/usage"] = "Token usage",
-        ["/spam"] = "Spam filter",
-        ["/spam-scan"] = "Scan inbox",
-        ["/spam-review"] = "Review domains",
-        ["/spam-cleanup"] = "Move to junk",
-        ["/coordinate"] = "Multi-agent mode",
-        ["exit"] = "Exit",
-    };
-
-    private static readonly Dictionary<string, (string Description, string PromptText)> Prompts = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["#list-5-spam-emails"] = ("List 5 spam emails", "List the first 5 spam emails in my inbox."),
-    };
+    private const string InputPrompt = "[cyan]❯[/] ";
 
     /// <summary>
-    /// Reads user input with command autocomplete support.
+    /// Available agents that can be invoked via the / menu.
     /// </summary>
-    /// <returns>The user's input string.</returns>
+    private static readonly List<AgentChoice> Agents =
+    [
+        new("Coordinator", "Multi-agent orchestration - delegates to specialized agents"),
+        new("SpamFilter", "Interactive spam filter with autonomous capabilities"),
+        new("SpamScan", "Autonomous scan: identifies suspicious domains"),
+        new("SpamReview", "Human review: batch review flagged domains"),
+        new("SpamCleanup", "Cleanup: move emails from blocked domains to junk"),
+        new("HostResearch", "A2A server: hosts ResearchAgent for remote access"),
+        new("Distributed", "A2A client: connects to remote agents"),
+    ];
+
+    /// <summary>
+    /// Reads user input with / agent menu support.
+    /// </summary>
+    /// <returns>The user's input string, or an agent command like "/coordinate".</returns>
     public static string ReadInput()
     {
         AnsiConsole.Markup(InputPrompt);
@@ -58,7 +55,6 @@ internal static class CommandInputService
 
             ProcessKey(key, state);
 
-            // Check if a prompt was selected and should be submitted immediately
             if (state.SubmitImmediately)
             {
                 System.Console.WriteLine();
@@ -67,14 +63,51 @@ internal static class CommandInputService
         }
     }
 
+    /// <summary>
+    /// Shows the agent selection menu and returns the selected agent command.
+    /// </summary>
+    /// <returns>The command for the selected agent, or null if cancelled.</returns>
+    public static string? ShowAgentMenu()
+    {
+        var choices = Agents.ConvertAll(a => $"[cyan]{a.Name,-14}[/] [dim]{a.Description}[/]");
+        choices.Add("[dim]Cancel[/]");
+
+        var selected = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("[blue]Select Agent[/]")
+                .PageSize(10)
+                .HighlightStyle(new Style(Color.Black, Color.Cyan))
+                .AddChoices(choices));
+
+        if (selected.StartsWith("[dim]Cancel", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        // Extract agent name between [cyan] and [/]
+        const string startTag = "[cyan]";
+        const string endTag = "[/]";
+        var startIdx = selected.IndexOf(startTag, StringComparison.Ordinal) + startTag.Length;
+        var endIdx = selected.IndexOf(endTag, startIdx, StringComparison.Ordinal);
+        var agentName = selected[startIdx..endIdx].Trim();
+
+        return agentName switch
+        {
+            "Coordinator" => "/coordinate",
+            "SpamFilter" => "/spam",
+            "SpamScan" => "/spam-scan",
+            "SpamReview" => "/spam-review",
+            "SpamCleanup" => "/spam-cleanup",
+            "HostResearch" => "/host-research",
+            "Distributed" => "/coordinate-distributed",
+            _ => null,
+        };
+    }
+
     private static void ProcessKey(ConsoleKeyInfo key, InputState state)
     {
         switch (key.Key)
         {
-            case ConsoleKey.Tab:
-                HandleTabCompletion(state);
-                break;
-
             case ConsoleKey.Backspace:
                 HandleBackspace(state);
                 break;
@@ -105,113 +138,6 @@ internal static class CommandInputService
                 HandleCharacterInput(key, state);
                 break;
         }
-    }
-
-    private static void HandleTabCompletion(InputState state)
-    {
-        if (state.Input.Count == 0)
-        {
-            return;
-        }
-
-        var firstChar = state.Input[0];
-        if (firstChar == '/')
-        {
-            HandleCommandTabCompletion(state);
-        }
-        else if (firstChar == '#')
-        {
-            HandlePromptTabCompletion(state);
-        }
-    }
-
-    private static void HandleCommandTabCompletion(InputState state)
-    {
-        var currentText = new string([.. state.Input]);
-        var matches = Commands.Keys
-            .Where(c => c.StartsWith(currentText, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        if (matches.Count == 0)
-        {
-            return;
-        }
-
-        if (matches.Count == 1)
-        {
-            ApplyCompletion(state, matches[0]);
-            return;
-        }
-
-        // Multiple matches - show picker
-        System.Console.WriteLine();
-        var selected = ShowCommandPicker(matches);
-        if (selected is not null)
-        {
-            state.Input.Clear();
-            state.Input.AddRange(selected);
-            state.CursorPos = state.Input.Count;
-        }
-
-        // Redraw prompt and input
-        AnsiConsole.Markup(InputPrompt);
-        state.StartTop = System.Console.CursorTop;
-        RedrawInput(state);
-    }
-
-    private static void HandlePromptTabCompletion(InputState state)
-    {
-        var currentText = new string([.. state.Input]);
-        var matches = Prompts.Keys
-            .Where(p => p.StartsWith(currentText, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        if (matches.Count == 0)
-        {
-            return;
-        }
-
-        if (matches.Count == 1)
-        {
-            ApplyPromptCompletion(state, matches[0]);
-            return;
-        }
-
-        // Multiple matches - show picker
-        System.Console.WriteLine();
-        var selected = ShowPromptPicker(matches);
-        if (selected is not null)
-        {
-            ApplyPromptCompletion(state, selected);
-        }
-        else
-        {
-            // Redraw prompt and input without changes
-            AnsiConsole.Markup(InputPrompt);
-            state.StartTop = System.Console.CursorTop;
-            RedrawInput(state);
-        }
-    }
-
-    private static void ApplyCompletion(InputState state, string command)
-    {
-        state.Input.Clear();
-        state.Input.AddRange(command);
-        state.CursorPos = state.Input.Count;
-        RedrawInput(state);
-    }
-
-    private static void ApplyPromptCompletion(InputState state, string promptKey)
-    {
-        var promptText = Prompts[promptKey].PromptText;
-        state.Input.Clear();
-        state.Input.AddRange(promptText);
-        state.CursorPos = state.Input.Count;
-        state.SubmitImmediately = true;
-
-        // Show the prompt text on one line
-        AnsiConsole.Markup(InputPrompt);
-        System.Console.Write(promptText);
     }
 
     private static void HandleBackspace(InputState state)
@@ -259,27 +185,24 @@ internal static class CommandInputService
             state.CursorPos++;
             RedrawInput(state);
 
-            // Show command picker immediately when user types just '/'
+            // Show agent menu immediately when user types just '/'
             if (state.Input.Count == 1 && state.Input[0] == '/')
             {
-                ShowCommandPickerInline(state);
-            }
-            else if (state.Input.Count == 1 && state.Input[0] == '#')
-            {
-                ShowPromptPickerInline(state);
+                ShowAgentMenuInline(state);
             }
         }
     }
 
-    private static void ShowCommandPickerInline(InputState state)
+    private static void ShowAgentMenuInline(InputState state)
     {
         System.Console.WriteLine();
-        var selected = ShowCommandPicker([.. Commands.Keys]);
+        var selected = ShowAgentMenu();
         if (selected is not null)
         {
             state.Input.Clear();
             state.Input.AddRange(selected);
             state.CursorPos = state.Input.Count;
+            state.SubmitImmediately = true;
         }
         else
         {
@@ -292,79 +215,6 @@ internal static class CommandInputService
         AnsiConsole.Markup(InputPrompt);
         state.StartTop = System.Console.CursorTop;
         RedrawInput(state);
-    }
-
-    private static void ShowPromptPickerInline(InputState state)
-    {
-        System.Console.WriteLine();
-        var selected = ShowPromptPicker([.. Prompts.Keys]);
-        if (selected is not null)
-        {
-            // Replace with the actual prompt text and submit immediately
-            var promptText = Prompts[selected].PromptText;
-            state.Input.Clear();
-            state.Input.AddRange(promptText);
-            state.CursorPos = state.Input.Count;
-            state.SubmitImmediately = true;
-
-            // Show the prompt text on one line
-            AnsiConsole.Markup(InputPrompt);
-            System.Console.Write(promptText);
-            return;
-        }
-
-        // User cancelled, clear the '#'
-        state.Input.Clear();
-        state.CursorPos = 0;
-
-        // Redraw prompt and input
-        AnsiConsole.Markup(InputPrompt);
-        state.StartTop = System.Console.CursorTop;
-        RedrawInput(state);
-    }
-
-    private static string? ShowCommandPicker(List<string> commands)
-    {
-        var choices = commands.ConvertAll(c => $"{c,-14} [dim]{Commands[c]}[/]");
-        choices.Add("[dim]Cancel[/]");
-
-        var selected = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("[dim]Commands[/]")
-                .PageSize(8)
-                .HighlightStyle(new Style(Color.Black, Color.Cyan))
-                .AddChoices(choices));
-
-        if (selected.StartsWith("[dim]Cancel", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        // Extract the command (first word)
-        var spaceIndex = selected.IndexOf(' ', StringComparison.Ordinal);
-        return spaceIndex > 0 ? selected[..spaceIndex] : selected;
-    }
-
-    private static string? ShowPromptPicker(List<string> prompts)
-    {
-        var choices = prompts.ConvertAll(p => $"{p,-20} [dim]{Prompts[p].Description}[/]");
-        choices.Add("[dim]Cancel[/]");
-
-        var selected = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("[dim]Prompts[/]")
-                .PageSize(8)
-                .HighlightStyle(new Style(Color.Black, Color.Magenta))
-                .AddChoices(choices));
-
-        if (selected.StartsWith("[dim]Cancel", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        // Extract the prompt key (first word)
-        var spaceIndex = selected.IndexOf(' ', StringComparison.Ordinal);
-        return spaceIndex > 0 ? selected[..spaceIndex] : selected;
     }
 
     private static void SetCursor(int left, int top)
@@ -400,4 +250,11 @@ internal static class CommandInputService
 
         public bool SubmitImmediately { get; set; }
     }
+
+    /// <summary>
+    /// Represents an agent choice in the menu.
+    /// </summary>
+    /// <param name="Name">The agent's display name.</param>
+    /// <param name="Description">A brief description of what the agent does.</param>
+    private sealed record AgentChoice(string Name, string Description);
 }

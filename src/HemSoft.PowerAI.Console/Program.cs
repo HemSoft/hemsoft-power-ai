@@ -45,7 +45,7 @@ internal static partial class Program
         Empty = 0,
         Exit = 1,
         Clear = 2,
-        Usage = 3,
+        AgentMenu = 3,
         Spam = 4,
         SpamScan = 5,
         SpamReview = 6,
@@ -735,64 +735,10 @@ internal static partial class Program
 
     private static void DisplayHeader(ChatOptions tools)
     {
+        _ = tools; // Tools parameter kept for future use
         AnsiConsole.Write(new FigletText("Power AI").Color(Color.Blue));
-        AnsiConsole.MarkupLine($"[dim]Model: {ModelId}[/]\n");
-
-        var toolsTable = new Table()
-            .Border(TableBorder.Rounded)
-            .AddColumn("[blue]Tool[/]")
-            .AddColumn("[blue]Description[/]");
-
-        foreach (var tool in (tools.Tools ?? []).OfType<AIFunction>())
-        {
-            _ = toolsTable.AddRow($"[green]{tool.Name}[/]", tool.Description ?? string.Empty);
-        }
-
-        AnsiConsole.Write(toolsTable);
-        AnsiConsole.WriteLine();
-
-        var agentsTable = new Table()
-            .Border(TableBorder.Rounded)
-            .AddColumn("[blue]Agent[/]")
-            .AddColumn("[blue]Description[/]")
-            .AddColumn("[blue]Command[/]");
-
-        _ = agentsTable.AddRow(
-            "[cyan]SpamFilter[/]",
-            "Interactive spam filter with autonomous capabilities",
-            "[dim]/spam[/]");
-        _ = agentsTable.AddRow(
-            "[cyan]SpamScan[/]",
-            "Autonomous scan: identifies suspicious domains, flags for human review",
-            "[dim]/spam-scan[/]");
-        _ = agentsTable.AddRow(
-            "[cyan]SpamReview[/]",
-            "Human review: batch review flagged domains, add to blocklist",
-            "[dim]/spam-review[/]");
-        _ = agentsTable.AddRow(
-            "[cyan]SpamCleanup[/]",
-            "Cleanup: move emails from blocked domains to junk folder",
-            "[dim]/spam-cleanup[/]");
-        _ = agentsTable.AddRow(
-            "[magenta]Coordinator[/]",
-            "Multi-agent orchestration: delegates tasks to specialized agents",
-            "[dim]/coordinate[/]");
-        _ = agentsTable.AddRow(
-            "[magenta1]Distributed[/]",
-            "A2A protocol: connects to remote agents via Agent-to-Agent protocol",
-            "[dim]/coordinate-distributed[/]");
-        _ = agentsTable.AddRow(
-            "[green]HostResearch[/]",
-            "A2A server: hosts ResearchAgent as an A2A endpoint for remote access",
-            "[dim]/host-research[/]");
-
-        AnsiConsole.Write(agentsTable);
-        AnsiConsole.WriteLine();
-
-        const string availableCommands =
-            "[dim]Commands: /spam, /spam-scan, /spam-review, /spam-cleanup, " +
-            "/coordinate, /coordinate-distributed, /host-research, /clear, /usage, exit[/]";
-        AnsiConsole.MarkupLine(availableCommands + "\n");
+        AnsiConsole.MarkupLine($"[dim]Model: {ModelId}[/]");
+        AnsiConsole.MarkupLine("[dim]Just chat naturally. Type [cyan]/[/] for agents, [cyan]exit[/] to quit.[/]\n");
     }
 
     private static (ChatCommand Command, string? Argument) ParseCommand(string? input)
@@ -805,12 +751,12 @@ internal static partial class Program
         var trimmed = input.Trim();
         var upper = trimmed.ToUpperInvariant();
 
-        // Exact matches for simple commands
+        // Simple command matches - most are now invoked via / menu
         return upper switch
         {
-            "EXIT" => (ChatCommand.Exit, null),
-            "/CLEAR" => (ChatCommand.Clear, null),
-            "/USAGE" => (ChatCommand.Usage, null),
+            "EXIT" or "QUIT" => (ChatCommand.Exit, null),
+            "/CLEAR" or "CLEAR" => (ChatCommand.Clear, null),
+            "/" => (ChatCommand.AgentMenu, null),
             "/SPAM" => (ChatCommand.Spam, null),
             "/SPAM-SCAN" => (ChatCommand.SpamScan, null),
             "/SPAM-REVIEW" => (ChatCommand.SpamReview, null),
@@ -820,8 +766,6 @@ internal static partial class Program
             "/HOST-RESEARCH" => (ChatCommand.HostResearch, null),
             _ when upper.StartsWith("/COORDINATE ", StringComparison.Ordinal) =>
                 (ChatCommand.Coordinate, trimmed["/COORDINATE ".Length..].Trim()),
-            _ when upper.StartsWith("/COORDINATE-DISTRIBUTED ", StringComparison.Ordinal) =>
-                (ChatCommand.CoordinateDistributed, trimmed["/COORDINATE-DISTRIBUTED ".Length..].Trim()),
             _ => (ChatCommand.Message, null),
         };
     }
@@ -877,11 +821,19 @@ internal static partial class Program
                 history.Clear();
                 sessionTokens.Reset();
                 await FetchAndDisplayModelInfoAsync(context.ModelService).ConfigureAwait(false);
-                AnsiConsole.MarkupLine("[yellow]Chat history and token counters cleared.[/]\n");
+                AnsiConsole.MarkupLine("[yellow]Chat history cleared.[/]\n");
                 return true;
 
-            case ChatCommand.Usage:
-                DisplayUsageInfo(sessionTokens, history.Count, context.ModelService.Info?.ContextLength);
+            case ChatCommand.AgentMenu:
+                // Show agent menu and handle selection
+                var selectedCommand = CommandInputService.ShowAgentMenu();
+                if (selectedCommand is not null)
+                {
+                    var (parsedCommand, parsedArg) = ParseCommand(selectedCommand);
+                    return await HandleCommandAsync(parsedCommand, parsedArg, history, sessionTokens, context)
+                        .ConfigureAwait(false);
+                }
+
                 return true;
 
             case ChatCommand.Spam:
@@ -926,28 +878,6 @@ internal static partial class Program
             default:
                 return false;
         }
-    }
-
-    private static void DisplayUsageInfo(
-        TokenUsageTracker sessionTokens,
-        int historyCount,
-        int? contextLength)
-    {
-        AnsiConsole.MarkupLine(
-            $"[cyan]Session: {sessionTokens.TotalInput.ToInvariant("N0")} in, " +
-            $"{sessionTokens.TotalOutput.ToInvariant("N0")} out ({sessionTokens.Total.ToInvariant("N0")} total)[/]");
-        AnsiConsole.MarkupLine($"[cyan]History: {historyCount.ToInvariant()} messages[/]");
-
-        if (contextLength.HasValue)
-        {
-            var pct = sessionTokens.Total * 100.0 / contextLength.Value;
-            var totalStr = sessionTokens.Total.ToInvariant("N0");
-            var contextStr = contextLength.Value.ToInvariant("N0");
-            var pctStr = pct.ToInvariant("F1");
-            AnsiConsole.MarkupLine($"[cyan]Context: {totalStr} / {contextStr} ({pctStr}%)[/]");
-        }
-
-        AnsiConsole.WriteLine();
     }
 
     private static async Task FetchAndDisplayModelInfoAsync(OpenRouterModelService modelService)

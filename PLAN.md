@@ -1,7 +1,7 @@
 ---
 title: "PLAN.md"
-version: "1.0.7"
-lastModified: "2025-12-17"
+version: "1.0.8"
+lastModified: "2025-12-16"
 author: "HemSoft"
 purpose: "MS Agent Framework Migration Plan"
 ---
@@ -335,6 +335,85 @@ IList<AITool> tools = [
 
 ---
 
+## Phase 8: Console UX Simplification 🔴
+
+Radically simplify the console experience to just two modes: natural chat and agent menu.
+
+### Design Philosophy
+
+**Goal**: Remove command clutter. Users should just chat. Agents are invoked via `/` menu.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Power AI                                                │
+│  ─────────                                               │
+│  Model: x-ai/grok-4.1-fast                               │
+│                                                          │
+│  Just chat naturally. Type / for agents.                 │
+│                                                          │
+│  ⟩ How's the weather in Seattle?                         │  ← Cool prompt
+│                                                          │
+│  ╭─────────────────────────────────────────────────────╮ │
+│  │ It's currently 52°F and cloudy in Seattle...        │ │
+│  ╰─────────────────────────────────────────────────────╯ │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Tasks
+
+- [x] **8.1** Simplify to two modes only
+  - ✅ Normal chat: Just type, LLM responds with tools as needed
+  - ✅ `/` menu: Shows agent picker (Coordinator, SpamFilter, etc.)
+  - ✅ Removed: `/clear`, `/usage`, `/spam-scan`, `/spam-review`, etc.
+
+- [x] **8.2** Update input prompt
+  - ✅ Changed from `[yellow]You:[/]` to `[cyan]⟩[/]` (chevron prompt)
+  - ✅ Cleaner, more modern look
+
+- [x] **8.3** Simplify header display
+  - ✅ Removed tools table (users don't need to see this)
+  - ✅ Removed verbose agents table
+  - ✅ Single line: "Just chat naturally. Type / for agents."
+
+- [x] **8.4** Clean up command parsing
+  - ✅ Removed ChatCommand enum values for spam-scan, spam-review, spam-cleanup
+  - ✅ Kept only: Empty, Exit, Clear, AgentMenu, Message
+  - ✅ `/` triggers agent selection prompt
+
+- [x] **8.5** Agent menu implementation
+  - ✅ `/` shows picker: Coordinator, SpamFilter, SpamScan, SpamReview, SpamCleanup, HostResearch
+  - ✅ User selects agent → enters that agent's mode
+  - ✅ `exit` returns to main chat
+
+### Files Modified
+
+- `src/HemSoft.PowerAI.Console/Program.cs` - Simplified command handling
+- `src/HemSoft.PowerAI.Console/Services/CommandInputService.cs` - New prompt, `/` for agents
+
+### Before/After
+
+```csharp
+// BEFORE: Cluttered prompt and verbose command parsing
+private const string InputPrompt = "[yellow]You:[/] ";
+var commands = new Dictionary<string, string> {
+    ["/clear"] = "Clear history",
+    ["/usage"] = "Token usage",
+    ["/spam"] = "Spam filter",
+    ["/spam-scan"] = "Scan inbox",
+    // ... 10+ more commands
+};
+
+// AFTER: Clean prompt and simple agent menu
+private const string InputPrompt = "[cyan]⟩[/] ";
+private static readonly List<AgentChoice> Agents = [
+    new("Coordinator", "Multi-agent orchestration"),
+    new("SpamFilter", "Interactive spam management"),
+    // ... agents only
+];
+```
+
+---
+
 ## Implementation Order
 
 ```mermaid
@@ -343,8 +422,9 @@ graph TD
     P2 --> P3[Phase 3: RemoteAgentTool ✅]
     P3 --> P4[Phase 4: Package Updates ✅]
     P4 --> P5[Phase 5: Middleware ✅]
-    P5 --> P7[Phase 7: UI Simplification]
-    P7 --> P6[Phase 6: Workflows]
+    P5 --> P7[Phase 7: UI Simplification ✅]
+    P7 --> P8[Phase 8: Console UX ✅]
+    P8 --> P6[Phase 6: Workflows]
 ```
 
 **Execution sequence:**
@@ -354,7 +434,8 @@ graph TD
 4. ~~Phase 4 (Package Updates)~~ ✅ Complete
 5. ~~Phase 5 (Middleware)~~ ✅ Complete
 6. ~~Phase 7 (UI Simplification)~~ ✅ Complete
-7. Phase 6 (Workflows) - Lowest priority, deferred
+7. ~~Phase 8 (Console UX)~~ ✅ Complete
+8. Phase 6 (Workflows) - Lowest priority, deferred
 
 ---
 
@@ -379,6 +460,8 @@ graph TD
 | `src/HemSoft.PowerAI.Console/Program.cs` | 7 | Simplify tool listing | ✅ Modified |
 | `tests/HemSoft.PowerAI.Console.Tests/MailAgentTests.cs` | 7 | New tests | ✅ Created |
 | `tests/HemSoft.PowerAI.Console.Tests/FunctionCallMiddlewareTests.cs` | 5 | Coverage tests | ✅ Created |
+| `src/HemSoft.PowerAI.Console/Program.cs` | 8 | Simplified UX | ✅ Modified |
+| `src/HemSoft.PowerAI.Console/Services/CommandInputService.cs` | 8 | New prompt, agent menu | ✅ Modified |
 | `src/HemSoft.PowerAI.Shared/Agents/TriageAgent.cs` | 6 | New agent | 🟢 Deferred |
 
 ---
@@ -397,6 +480,8 @@ graph TD
 - [x] MailAgent created with encapsulated OutlookMailTools
 - [x] Coordinator uses MailAgent.AsAIFunction() instead of raw tool
 - [x] UI simplified (fewer exposed options)
+- [x] Console UX radically simplified - just chat + `/` for agents
+- [x] Modern prompt character (`⟩`) replaces "You:"
 - [ ] Multi-agent handoff workflow implemented (deferred)
 
 ---
