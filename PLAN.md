@@ -1,6 +1,6 @@
 ---
 title: "PLAN.md"
-version: "1.0.9"
+version: "1.0.10"
 lastModified: "2025-12-16"
 author: "HemSoft"
 purpose: "MS Agent Framework Migration Plan"
@@ -184,6 +184,7 @@ After event-driven foundation is solid, add workflow orchestration.
 
 ## References
 
+- [ARCHITECTURE.md](./agents/global/ARCHITECTURE.md) - System architecture and design decisions
 - [REFERENCE-MATERIAL.md](./research-material/REFERENCE-MATERIAL.md) - MS Agent Framework docs
 - [rwjdk/MicrosoftAgentFrameworkSamples](https://github.com/rwjdk/MicrosoftAgentFrameworkSamples) - Samples
 - [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis) - Redis client

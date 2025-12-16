@@ -1,6 +1,6 @@
 ---
 title: "AGENTS.md"
-version: "1.0.18"
+version: "1.0.19"
 lastModified: "2025-12-16"
 author: "Franz Hemmer"
 purpose: "Instructions for AI, LLM's, tools and agents."
@@ -87,6 +87,7 @@ Read all the instruction files below and understand and follow them:
 
 | File | Purpose |
 |------|---------|
+| [ARCHITECTURE.md](./agents/global/ARCHITECTURE.md) | System architecture, component design, and event-driven patterns |
 | [CODE-QUALITY.md](./agents/global/CODE-QUALITY.md) | Code quality standards and build enforcement |
 | [CODE-STANDARDS.md](./agents/global/CODE-STANDARDS.md) | C# coding standards to adhere to |
 | [COVERAGE.md](./agents/global/COVERAGE.md) | Test coverage analysis and threshold enforcement |
