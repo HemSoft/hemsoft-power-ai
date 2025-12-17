@@ -1072,12 +1072,16 @@ internal static partial class Program
             new SelectionPrompt<string>()
                 .Title("[blue]Agent Tasks[/]")
                 .HighlightStyle(new Style(Color.Black, Color.Cyan))
-                .AddChoices("Submit Research Task", "Check Pending Tasks", "Back")).ConfigureAwait(false);
+                .AddChoices("Submit Research Task", "Deep Research (Iterative)", "Check Pending Tasks", "Back")).ConfigureAwait(false);
 
         switch (choice)
         {
             case "Submit Research Task":
                 await SubmitResearchTaskAsync(context).ConfigureAwait(false);
+                break;
+
+            case "Deep Research (Iterative)":
+                await RunIterativeResearchAsync(context).ConfigureAwait(false);
                 break;
 
             case "Check Pending Tasks":
@@ -1107,6 +1111,70 @@ internal static partial class Program
         {
             await RunSynchronousResearchAsync(prompt).ConfigureAwait(false);
         }
+    }
+
+    private static async Task RunIterativeResearchAsync(CommandContext context)
+    {
+        var prompt = await AnsiConsole.PromptAsync(
+            new TextPrompt<string>("[blue]Deep Research[/] - Enter your research question:")
+                .AllowEmpty()).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            AnsiConsole.MarkupLine("[dim]Cancelled.[/]");
+            return;
+        }
+
+        // Extract output path from prompt if specified
+        var outputPath = ExtractOutputPath(prompt);
+
+        // Use distributed execution if TaskService is available
+        if (context.TaskService is not null)
+        {
+            await SubmitIterativeResearchTaskAsync(context.TaskService, prompt, outputPath).ConfigureAwait(false);
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("[yellow]No Redis connection.[/] Deep research requires distributed execution.");
+            AnsiConsole.MarkupLine("[dim]Please ensure Redis is running and restart the application.[/]");
+        }
+    }
+
+    private static async Task SubmitIterativeResearchTaskAsync(
+        AgentTaskService taskService,
+        string prompt,
+        string? outputPath)
+    {
+        try
+        {
+            var (_, result) = await ExecuteIterativeTaskWithProgressAsync(taskService, prompt, outputPath).ConfigureAwait(false);
+            await HandleTaskResultAsync(result, outputPath).ConfigureAwait(false);
+        }
+        catch (StackExchange.Redis.RedisException ex)
+        {
+            AnsiConsole.MarkupLine("[yellow]Redis error:[/] " + Markup.Escape(ex.Message));
+        }
+    }
+
+    private static async Task<(string? TaskId, AgentTaskResult? Result)> ExecuteIterativeTaskWithProgressAsync(
+        AgentTaskService taskService,
+        string prompt,
+        string? outputPath)
+    {
+        string? taskId = null;
+        AgentTaskResult? result = null;
+
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(Style.Parse("cyan"))
+            .StartAsync("Submitting iterative research task...", async ctx =>
+            {
+                taskId = await taskService.SubmitIterativeResearchTaskAsync(prompt, outputPath).ConfigureAwait(false);
+                ctx.Status("[cyan]Task submitted.[/] Waiting for iterative research to complete...");
+                result = await WaitForResultWithProgressAsync(taskService, taskId, ctx).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+
+        return (taskId, result);
     }
 
     private static async Task SubmitAsyncResearchTaskAsync(AgentTaskService taskService, string prompt)
@@ -1156,22 +1224,50 @@ internal static partial class Program
         var startTime = TimeProvider.System.GetUtcNow();
         var timeout = TimeSpan.FromMinutes(5);
         AgentTaskResult? result = null;
+        var lastProgressMessage = string.Empty;
+
+        // Create a cancellation source that we'll cancel when the task completes
+        using var progressCts = new CancellationTokenSource();
+
+        // Subscribe to progress updates in the background
+        _ = taskService.SubscribeToProgressAsync(
+            taskId,
+            progress => lastProgressMessage = FormatProgressMessage(progress),
+            progressCts.Token);
 
         while (result is null && (TimeProvider.System.GetUtcNow() - startTime) < timeout)
         {
-            result = await taskService.WaitForResultAsync(taskId, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            result = await taskService.WaitForResultAsync(taskId, TimeSpan.FromSeconds(2), progressCts.Token).ConfigureAwait(false);
 
             if (result is null)
             {
                 var elapsed = TimeProvider.System.GetUtcNow() - startTime;
-                var statusMsg = string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"[cyan]Processing...[/] [dim]({elapsed.TotalSeconds:F0}s elapsed)[/]");
+                var statusMsg = string.IsNullOrEmpty(lastProgressMessage)
+                    ? string.Create(CultureInfo.InvariantCulture, $"[cyan]Processing...[/] [dim]({elapsed.TotalSeconds:F0}s elapsed)[/]")
+                    : string.Create(CultureInfo.InvariantCulture, $"{lastProgressMessage} [dim]({elapsed.TotalSeconds:F0}s)[/]");
                 ctx.Status(statusMsg);
             }
         }
 
+        // Cancel the progress subscription
+        await progressCts.CancelAsync().ConfigureAwait(false);
+
         return result;
+    }
+
+    private static string FormatProgressMessage(AgentTaskProgress progress)
+    {
+        if (progress.ToolName is null)
+        {
+            return Markup.Escape(progress.Message);
+        }
+
+        var messageWithoutToolPrefix = progress.Message.Replace(
+            $"{progress.ToolName}: ",
+            string.Empty,
+            StringComparison.Ordinal);
+
+        return $"[yellow][[Tool]][/] {Markup.Escape(progress.ToolName)}: {Markup.Escape(messageWithoutToolPrefix)}";
     }
 
     private static async Task HandleTaskResultAsync(AgentTaskResult? result, string? outputPath)

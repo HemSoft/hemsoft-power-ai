@@ -1,3 +1,7 @@
 {
-    "debug.internalConsoleOptions": "neverOpen"
+    "debug.internalConsoleOptions": "neverOpen",
+    "sonarlint.analysisExcludesStandalone": {
+        "CoverageReport/**": true,
+        "TestResults/**": true
+    }
 }

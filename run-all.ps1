@@ -50,6 +50,24 @@ $ScriptRoot = $PSScriptRoot
 Write-Host "HemSoft Power AI" -ForegroundColor Cyan -NoNewline
 Write-Host " - " -NoNewline
 
+# Step 0: Build all projects first to avoid concurrent build locking
+Write-Host "[Build] " -ForegroundColor Yellow -NoNewline
+Push-Location $ScriptRoot
+try {
+    $buildOutput = dotnet build --nologo -v q 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "FAILED" -ForegroundColor Red
+        Write-Host $buildOutput
+        exit 1
+    }
+    Write-Host "✓" -ForegroundColor Green -NoNewline
+}
+finally {
+    Pop-Location
+}
+
+Write-Host " → " -ForegroundColor DarkGray -NoNewline
+
 # Step 1: Start Aspire Dashboard
 if (-not $SkipAspire) {
     Write-Host "[1/4] Aspire" -ForegroundColor Yellow -NoNewline
@@ -86,7 +104,7 @@ if (-not $SkipAgents) {
 
     # Start agent host in new terminal
     $agentHostPath = Join-Path $ScriptRoot "src/HemSoft.PowerAI.AgentHost"
-    Start-Process pwsh -ArgumentList "-NoExit", "-Command", "Set-Location '$agentHostPath'; dotnet run"
+    Start-Process pwsh -ArgumentList "-NoExit", "-Command", "Set-Location '$agentHostPath'; dotnet run --no-build"
 
     Write-Host " ✓" -ForegroundColor Green -NoNewline
 }
@@ -102,7 +120,7 @@ if (-not $SkipWorker) {
 
     # Start worker in new terminal
     $workerPath = Join-Path $ScriptRoot "src/HemSoft.PowerAI.AgentWorker"
-    Start-Process pwsh -ArgumentList "-NoExit", "-Command", "Set-Location '$workerPath'; `$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4317'; dotnet run"
+    Start-Process pwsh -ArgumentList "-NoExit", "-Command", "Set-Location '$workerPath'; `$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4317'; dotnet run --no-build"
 
     Write-Host " ✓" -ForegroundColor Green -NoNewline
 
@@ -125,6 +143,24 @@ Write-Host "[4/4] Console" -ForegroundColor Yellow -NoNewline
 Write-Host " ✓" -ForegroundColor Green
 Write-Host ""
 
+# Show service URLs
+Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+Write-Host "  Services:" -ForegroundColor Cyan
+if (-not $SkipAspire -and $dockerAvailable) {
+    Write-Host "    Aspire Dashboard:  " -ForegroundColor White -NoNewline
+    Write-Host "http://localhost:18888" -ForegroundColor Blue
+}
+if (-not $SkipAgents) {
+    Write-Host "    A2A Agent Host:    " -ForegroundColor White -NoNewline
+    Write-Host "http://localhost:5001" -ForegroundColor Blue
+}
+if (-not $SkipWorker) {
+    Write-Host "    OTEL Endpoint:     " -ForegroundColor White -NoNewline
+    Write-Host "http://localhost:4317" -ForegroundColor DarkGray
+}
+Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+Write-Host ""
+
 $env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4317"
 $env:OTEL_SERVICE_NAME = if ($Mode -eq 'spam') { "HemSoft.PowerAI.SpamFilter" } else { "HemSoft.PowerAI.Console" }
 $env:RESEARCH_AGENT_URL = "http://localhost:5001/"
@@ -132,10 +168,10 @@ $env:RESEARCH_AGENT_URL = "http://localhost:5001/"
 Push-Location $ScriptRoot/src/HemSoft.PowerAI.Console
 try {
     if ($Mode -eq 'spam') {
-        dotnet run -- spam
+        dotnet run --no-build -- spam
     }
     else {
-        dotnet run
+        dotnet run --no-build
     }
 }
 finally {

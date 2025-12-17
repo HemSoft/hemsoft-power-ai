@@ -108,32 +108,42 @@ internal sealed class AgentTaskService : IAsyncDisposable
     /// <param name="outputPath">Optional file path to write result to.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The task ID for tracking.</returns>
-    public async Task<string> SubmitResearchTaskAsync(
+    public Task<string> SubmitResearchTaskAsync(
         string prompt,
         string? outputPath = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        this.SubmitTaskAsync("research", prompt, outputPath, cancellationToken);
+
+    /// <summary>
+    /// Submits an iterative research task and returns the task ID.
+    /// </summary>
+    /// <param name="prompt">The research prompt.</param>
+    /// <param name="outputPath">Optional file path to write result to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The task ID for tracking.</returns>
+    public Task<string> SubmitIterativeResearchTaskAsync(
+        string prompt,
+        string? outputPath = null,
+        CancellationToken cancellationToken = default) =>
+        this.SubmitTaskAsync("iterative-research", prompt, outputPath, cancellationToken);
+
+    /// <summary>
+    /// Subscribes to progress updates for a task.
+    /// </summary>
+    /// <param name="taskId">The task ID to monitor.</param>
+    /// <param name="onProgress">Callback for each progress update.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that runs until cancelled or task completes.</returns>
+    public Task SubscribeToProgressAsync(
+        string taskId,
+        Action<AgentTaskProgress> onProgress,
+        CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(this.disposed, this);
-        ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskId);
+        ArgumentNullException.ThrowIfNull(onProgress);
 
-        var taskId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-        var request = new AgentTaskRequest(
-            TaskId: taskId,
-            AgentType: "research",
-            Prompt: prompt,
-            SubmittedAt: this.timeProvider.GetUtcNow(),
-            OutputPath: outputPath);
-
-        // Register a pending task before submitting
-        var tcs = new TaskCompletionSource<AgentTaskResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _ = this.pendingTasks.TryAdd(taskId, tcs);
-
-        // Start listening for this specific task's result
-        _ = this.ListenForResultAsync(taskId, cancellationToken);
-
-        await this.broker.SubmitTaskAsync(request, cancellationToken).ConfigureAwait(false);
-
-        return taskId;
+        return this.broker.SubscribeToProgressAsync(taskId, onProgress, cancellationToken);
     }
 
     /// <summary>
@@ -221,6 +231,35 @@ internal sealed class AgentTaskService : IAsyncDisposable
         data.RootElement.TryGetProperty("text", out var textElement)
             ? textElement.GetString() ?? string.Empty
             : data.RootElement.GetRawText();
+
+    private async Task<string> SubmitTaskAsync(
+        string agentType,
+        string prompt,
+        string? outputPath,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(this.disposed, this);
+        ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
+
+        var taskId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var request = new AgentTaskRequest(
+            TaskId: taskId,
+            AgentType: agentType,
+            Prompt: prompt,
+            SubmittedAt: this.timeProvider.GetUtcNow(),
+            OutputPath: outputPath);
+
+        // Register a pending task before submitting
+        var tcs = new TaskCompletionSource<AgentTaskResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = this.pendingTasks.TryAdd(taskId, tcs);
+
+        // Start listening for this specific task's result
+        _ = this.ListenForResultAsync(taskId, cancellationToken);
+
+        await this.broker.SubmitTaskAsync(request, cancellationToken).ConfigureAwait(false);
+
+        return taskId;
+    }
 
     private async Task ListenForResultAsync(string taskId, CancellationToken cancellationToken)
     {

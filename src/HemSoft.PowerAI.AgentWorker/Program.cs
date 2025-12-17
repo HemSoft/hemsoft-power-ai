@@ -3,6 +3,7 @@
 // </copyright>
 
 using HemSoft.PowerAI.AgentWorker;
+using HemSoft.PowerAI.AgentWorker.Configuration;
 using HemSoft.PowerAI.Common.Configuration;
 using HemSoft.PowerAI.Common.Services;
 
@@ -18,6 +19,10 @@ var builder = Host.CreateApplicationBuilder(args);
 // Configure Redis settings
 var redisSettings = new RedisSettings();
 builder.Configuration.GetSection(RedisSettings.SectionName).Bind(redisSettings);
+
+// Configure AgentHost settings
+builder.Services.Configure<AgentHostSettings>(
+    builder.Configuration.GetSection(AgentHostSettings.SectionName));
 
 // Register Redis broker as singleton
 builder.Services.AddSingleton<IAgentTaskBroker>(_ =>

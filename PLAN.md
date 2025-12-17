@@ -1,7 +1,7 @@
 ---
 title: "PLAN.md"
-version: "1.0.13"
-lastModified: "2025-12-16"
+version: "1.0.15"
+lastModified: "2025-12-17"
 author: "HemSoft"
 purpose: "MS Agent Framework Migration Plan"
 ---
@@ -183,6 +183,91 @@ public enum AgentTaskStatus { Pending, Running, Completed, Failed, Cancelled }
 
 ---
 
+## Phase 9.6: Iterative Research with EvaluatorAgent 🟢
+
+**Goal:** Enable the ResearchAgent to iterate on findings rather than settling for a single pass. An `EvaluatorAgent` judges research quality and provides refinement guidance.
+
+### Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                    IterativeResearchService                          │
+│                                                                      │
+│   ┌─────────────┐    findings    ┌─────────────────┐                │
+│   │ Research    │ ────────────▶  │ Evaluator       │                │
+│   │ Agent       │                │ Agent           │                │
+│   │             │ ◀────────────  │                 │                │
+│   └─────────────┘  refinedQuery  └─────────────────┘                │
+│         │              │                                             │
+│         │              ▼                                             │
+│         │    ┌─────────────────────┐                                │
+│         │    │ Iteration State     │                                │
+│         │    │ - findings[]        │                                │
+│         │    │ - evaluations[]     │                                │
+│         └──▶ │ - currentQuery      │                                │
+│              │ - iteration #       │                                │
+│              └─────────────────────┘                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Models
+
+```csharp
+// In-memory state for a research session
+public record ResearchIterationState(
+    string OriginalQuery,
+    List<ResearchIteration> Iterations,
+    bool IsComplete,
+    string? FinalSynthesis);
+
+public record ResearchIteration(
+    int IterationNumber,
+    string Query,
+    string Findings,
+    ResearchEvaluation Evaluation,
+    DateTimeOffset Timestamp);
+
+public record ResearchEvaluation(
+    bool IsSatisfactory,
+    int QualityScore,           // 1-10
+    string[] Gaps,              // What's missing
+    string[] FollowUpQuestions, // Suggested refinements
+    string? RefinedQuery);      // Next query if not satisfactory
+```
+
+### Tasks
+
+- [x] **9.6.1** Create `EvaluatorAgent` in `HemSoft.PowerAI.Shared/Agents`
+  - Judges research completeness and quality
+  - Returns structured `ResearchEvaluation`
+  - No tools - pure reasoning agent
+
+- [x] **9.6.2** Create research iteration models
+  - `ResearchIterationState`, `ResearchIteration`, `ResearchEvaluation`
+  - Simple in-memory storage for now
+
+- [x] **9.6.3** Create `IterativeResearchService`
+  - Orchestrates the research loop
+  - Configurable max iterations (default: 3)
+  - Accumulates findings across iterations
+  - Synthesizes final result from all iterations
+
+- [x] **9.6.4** Add `Deep Research (Iterative)` command to Console
+  - Submits iterative research task
+  - Shows iteration progress
+  - Displays final synthesized result
+
+- [x] **9.6.5** Unit tests for research iteration models
+
+### Success Criteria
+
+- [x] EvaluatorAgent correctly identifies research gaps
+- [x] Research iterates until quality threshold met OR max iterations
+- [x] Final synthesis incorporates findings from all iterations
+- [x] User can see iteration progress in console
+
+---
+
 ## Phase 10: Multi-Agent Orchestration 🟡
 
 After event-driven foundation is solid, add workflow orchestration.
@@ -214,14 +299,15 @@ After event-driven foundation is solid, add workflow orchestration.
 
 ## Current State
 
-- ✅ **687 tests passing**
+- ✅ **707 tests passing**
 - ✅ **Build succeeds with no warnings**
 - ✅ Console simplified: `/` menu → Model | Agents
 - ✅ Phase 9.1 complete - Redis infrastructure with `IAgentTaskBroker` and `RedisAgentTaskBroker`
 - ✅ Phase 9.2 complete - `AgentWorkerService` background worker
 - ✅ Phase 9.3 complete - Async task flow in Console with `AgentTaskService`
 - ✅ Phase 9.5 complete - Worker separated into `HemSoft.PowerAI.AgentWorker`
-- 🚧 **Next:** Phase 9.4 - Update ResearchAgent for structured output
+- ✅ Phase 9.6 complete - Iterative Research with EvaluatorAgent
+- 🚧 **Next:** Phase 10 - Multi-Agent Orchestration
 
 ---
 

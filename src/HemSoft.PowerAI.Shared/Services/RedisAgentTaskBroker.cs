@@ -24,6 +24,7 @@ public sealed class RedisAgentTaskBroker : IAgentTaskBroker, IAsyncDisposable
 {
     private const string TasksChannel = "agents:tasks";
     private const string ResultsChannelPrefix = "agents:results:";
+    private const string ProgressChannelPrefix = "agents:progress:";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -95,6 +96,28 @@ public sealed class RedisAgentTaskBroker : IAgentTaskBroker, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(handler);
 
         return this.SubscribeToResultCoreAsync(taskId, handler, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task PublishProgressAsync(AgentTaskProgress progress, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(this.disposed, this);
+        ArgumentNullException.ThrowIfNull(progress);
+
+        return this.PublishProgressCoreAsync(progress);
+    }
+
+    /// <inheritdoc/>
+    public Task SubscribeToProgressAsync(
+        string taskId,
+        Action<AgentTaskProgress> handler,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(this.disposed, this);
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskId);
+        ArgumentNullException.ThrowIfNull(handler);
+
+        return this.SubscribeToProgressCoreAsync(taskId, handler, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -196,6 +219,49 @@ public sealed class RedisAgentTaskBroker : IAgentTaskBroker, IAsyncDisposable
                     resultHandler(result);
                     completionSource.TrySetResult();
                     break;
+                }
+            }
+        }
+    }
+
+    private async Task PublishProgressCoreAsync(AgentTaskProgress progress)
+    {
+        var channel = ProgressChannelPrefix + progress.TaskId;
+        var json = JsonSerializer.Serialize(progress, SerializerOptions);
+        _ = await this.subscriber.PublishAsync(RedisChannel.Literal(channel), json).ConfigureAwait(false);
+    }
+
+    private async Task SubscribeToProgressCoreAsync(
+        string taskId,
+        Action<AgentTaskProgress> handler,
+        CancellationToken cancellationToken)
+    {
+        var channel = ProgressChannelPrefix + taskId;
+        var tcs = new TaskCompletionSource();
+        var registration = cancellationToken.Register(() => tcs.TrySetResult());
+        await using (registration.ConfigureAwait(false))
+        {
+            var redisChannel = RedisChannel.Literal(channel);
+            var messageQueue = await this.subscriber.SubscribeAsync(redisChannel).ConfigureAwait(false);
+
+            _ = ProcessProgressMessagesAsync(messageQueue, handler, cancellationToken).ConfigureAwait(false);
+
+            await tcs.Task.ConfigureAwait(false);
+            await this.subscriber.UnsubscribeAsync(redisChannel).ConfigureAwait(false);
+        }
+
+        static async Task ProcessProgressMessagesAsync(
+            ChannelMessageQueue queue,
+            Action<AgentTaskProgress> progressHandler,
+            CancellationToken ct)
+        {
+            await foreach (var message in queue.WithCancellation(ct).ConfigureAwait(false))
+            {
+                var json = message.Message.ToString();
+                var progress = JsonSerializer.Deserialize<AgentTaskProgress>(json, SerializerOptions);
+                if (progress is not null)
+                {
+                    progressHandler(progress);
                 }
             }
         }

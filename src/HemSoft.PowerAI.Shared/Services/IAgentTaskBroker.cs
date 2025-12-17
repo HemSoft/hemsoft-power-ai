@@ -57,4 +57,21 @@ public interface IAgentTaskBroker
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes when the result is received or cancelled.</returns>
     Task SubscribeToResultAsync(string taskId, Action<AgentTaskResult> handler, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Publishes a progress update for a task.
+    /// </summary>
+    /// <param name="progress">The progress update to publish.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    Task PublishProgressAsync(AgentTaskProgress progress, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Subscribes to progress updates for a specific task.
+    /// </summary>
+    /// <param name="taskId">The task ID to listen for.</param>
+    /// <param name="handler">Handler invoked for each progress update.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that runs until cancelled.</returns>
+    Task SubscribeToProgressAsync(string taskId, Action<AgentTaskProgress> handler, CancellationToken cancellationToken);
 }

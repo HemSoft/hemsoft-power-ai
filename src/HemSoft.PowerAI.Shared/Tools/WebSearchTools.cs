@@ -11,6 +11,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using HemSoft.PowerAI.Common.Services;
+
 /// <summary>
 /// Provides web search capabilities for the AI agent using Tavily API.
 /// </summary>
@@ -44,6 +46,13 @@ public static class WebSearchTools
 
     private static async Task<string> WebSearchCoreAsync(string query, int maxResults)
     {
+        // Report progress to client if in a task context
+        var context = AgentTaskContext.Instance;
+        if (context is not null)
+        {
+            await context.ReportProgressAsync($"WebSearch: {query}", "WebSearch", CancellationToken.None).ConfigureAwait(false);
+        }
+
         Console.WriteLine($"[Tool] WebSearch: {query}");
 
         if (string.IsNullOrWhiteSpace(query))

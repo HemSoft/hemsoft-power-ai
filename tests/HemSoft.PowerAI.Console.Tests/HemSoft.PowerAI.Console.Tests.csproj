@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <!-- Coverlet coverage settings -->
+  <!-- NOTE: Only measure Console assembly coverage. Shared assembly is tested by Common.Tests. -->
   <PropertyGroup>
     <CollectCoverage>true</CollectCoverage>
     <CoverletOutputFormat>cobertura</CoverletOutputFormat>
@@ -16,6 +17,7 @@
     <Threshold>90</Threshold>
     <ThresholdType>line</ThresholdType>
     <ThresholdStat>total</ThresholdStat>
+    <Include>[HemSoft.PowerAI.Console]*</Include>
     <ExcludeByFile>**/Program.cs,**/obj/**/*.cs</ExcludeByFile>
     <ExcludeByAttribute>ExcludeFromCodeCoverage,GeneratedCodeAttribute</ExcludeByAttribute>
   </PropertyGroup>

@@ -52,7 +52,13 @@ switch ($Mode) {
 
         # Run the standalone Aspire Dashboard
         Write-Host "Starting Aspire Dashboard container..." -ForegroundColor Cyan
-        Write-Host "Dashboard URL: http://localhost:18888" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+        Write-Host "  Dashboard URL: " -ForegroundColor White -NoNewline
+        Write-Host "http://localhost:18888" -ForegroundColor Blue
+        Write-Host "  OTEL Receiver: " -ForegroundColor White -NoNewline
+        Write-Host "http://localhost:4317" -ForegroundColor DarkGray
+        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
         Write-Host ""
         docker run --rm -it `
             -p 18888:18888 `
