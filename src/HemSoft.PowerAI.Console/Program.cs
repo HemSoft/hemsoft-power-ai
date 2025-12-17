@@ -1111,35 +1111,13 @@ internal static partial class Program
 
     private static async Task SubmitAsyncResearchTaskAsync(AgentTaskService taskService, string prompt)
     {
-        AnsiConsole.MarkupLine("[dim]Submitting task to agent queue...[/]");
+        // Extract output path from prompt if specified (e.g., "... save to F:\file.md" or "Put your report in F:\file.md")
+        var outputPath = ExtractOutputPath(prompt);
 
         try
         {
-            var taskId = await taskService.SubmitResearchTaskAsync(prompt).ConfigureAwait(false);
-            var shortId = taskId[..8];
-            var displayPrompt = prompt.Length > 50 ? prompt[..50] + "..." : prompt;
-
-            AnsiConsole.Write(new Panel(
-                "[green]Task submitted successfully![/]\n\n" +
-                "[dim]Task ID:[/] [cyan]" + shortId + "...[/]\n" +
-                "[dim]Prompt:[/] " + Markup.Escape(displayPrompt) + "\n\n" +
-                "[dim]The task is now running in the background. You can continue chatting.[/]\n" +
-                "[dim]Use 'Check Pending Tasks' in the /agents menu to see results.[/]")
-                .Header("[cyan]Research Task Queued[/]")
-                .Border(BoxBorder.Rounded)
-                .BorderColor(Color.Cyan));
-            AnsiConsole.WriteLine();
-
-            // Optionally wait for quick results
-            var waitChoice = await AnsiConsole.PromptAsync(
-                new SelectionPrompt<string>()
-                    .Title("[dim]Would you like to wait for the result?[/]")
-                    .AddChoices("Wait (up to 2 minutes)", "Continue chatting")).ConfigureAwait(false);
-
-            if (waitChoice.StartsWith("Wait", StringComparison.Ordinal))
-            {
-                await WaitForTaskResultAsync(taskService, taskId).ConfigureAwait(false);
-            }
+            var (_, result) = await ExecuteTaskWithProgressAsync(taskService, prompt, outputPath).ConfigureAwait(false);
+            await HandleTaskResultAsync(result, outputPath).ConfigureAwait(false);
         }
         catch (StackExchange.Redis.RedisException ex)
         {
@@ -1149,29 +1127,138 @@ internal static partial class Program
         }
     }
 
-    private static async Task WaitForTaskResultAsync(AgentTaskService taskService, string taskId)
+    private static async Task<(string? TaskId, AgentTaskResult? Result)> ExecuteTaskWithProgressAsync(
+        AgentTaskService taskService,
+        string prompt,
+        string? outputPath)
     {
+        string? taskId = null;
         AgentTaskResult? result = null;
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .SpinnerStyle(Style.Parse("cyan"))
-            .StartAsync("Waiting for result...", async _ =>
+            .StartAsync("Submitting task to agent worker...", async ctx =>
             {
-                result = await taskService.WaitForResultAsync(
-                    taskId,
-                    TimeSpan.FromMinutes(2)).ConfigureAwait(false);
+                taskId = await taskService.SubmitResearchTaskAsync(prompt, outputPath).ConfigureAwait(false);
+                ctx.Status("[cyan]Task submitted.[/] Waiting for agent worker to process...");
+                result = await WaitForResultWithProgressAsync(taskService, taskId, ctx).ConfigureAwait(false);
             }).ConfigureAwait(false);
 
-        if (result is not null)
+        return (taskId, result);
+    }
+
+    private static async Task<AgentTaskResult?> WaitForResultWithProgressAsync(
+        AgentTaskService taskService,
+        string taskId,
+        StatusContext ctx)
+    {
+        var startTime = TimeProvider.System.GetUtcNow();
+        var timeout = TimeSpan.FromMinutes(5);
+        AgentTaskResult? result = null;
+
+        while (result is null && (TimeProvider.System.GetUtcNow() - startTime) < timeout)
         {
-            AnsiConsole.WriteLine();
-            AgentTaskService.DisplayResult(result);
-            AnsiConsole.WriteLine();
+            result = await taskService.WaitForResultAsync(taskId, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            if (result is null)
+            {
+                var elapsed = TimeProvider.System.GetUtcNow() - startTime;
+                var statusMsg = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"[cyan]Processing...[/] [dim]({elapsed.TotalSeconds:F0}s elapsed)[/]");
+                ctx.Status(statusMsg);
+            }
         }
-        else
+
+        return result;
+    }
+
+    private static async Task HandleTaskResultAsync(AgentTaskResult? result, string? outputPath)
+    {
+        if (result is null)
         {
-            AnsiConsole.MarkupLine("[yellow]Task still running. Check back later with 'Check Pending Tasks'.[/]\n");
+            AnsiConsole.MarkupLine("[yellow]Task timed out after 5 minutes. Check back later with 'Check Pending Tasks'.[/]\n");
+            return;
+        }
+
+        AnsiConsole.WriteLine();
+        AgentTaskService.DisplayResult(result);
+
+        if (!string.IsNullOrWhiteSpace(outputPath) && result.Status == AgentTaskStatus.Completed && result.Data is not null)
+        {
+            await WriteResultToFileAsync(result, outputPath).ConfigureAwait(false);
+        }
+
+        AnsiConsole.WriteLine();
+    }
+
+    private static string? ExtractOutputPath(string prompt)
+    {
+        // Common patterns: "save to F:\file.md", "Put your report in F:\file.md", "output to C:\path\file.txt"
+        // Using compiled regex with timeout for safety
+        var timeout = TimeSpan.FromSeconds(1);
+        const System.Text.RegularExpressions.RegexOptions options =
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+            System.Text.RegularExpressions.RegexOptions.NonBacktracking |
+            System.Text.RegularExpressions.RegexOptions.ExplicitCapture;
+
+        try
+        {
+            // Pattern 1: explicit save/put/write/output commands
+            var match = System.Text.RegularExpressions.Regex.Match(
+                prompt,
+                @"(?:save|put|write|output)\s+(?:your\s+)?(?:report\s+)?(?:to|in)\s+(?<path>[A-Za-z]:[\\][^\s""']+)",
+                options,
+                timeout);
+
+            if (match.Success && match.Groups["path"].Success)
+            {
+                return match.Groups["path"].Value;
+            }
+
+            // Pattern 2: path at end of prompt with known extension
+            match = System.Text.RegularExpressions.Regex.Match(
+                prompt,
+                @"(?<path>[A-Za-z]:[\\][^\s""']+\.(?:md|txt|json|html))\s*$",
+                options,
+                timeout);
+
+            if (match.Success && match.Groups["path"].Success)
+            {
+                return match.Groups["path"].Value;
+            }
+        }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+        {
+            // Safety: if regex times out, skip file output
+        }
+
+        return null;
+    }
+
+    private static async Task WriteResultToFileAsync(AgentTaskResult result, string outputPath)
+    {
+        try
+        {
+            var text = result.Data!.RootElement.TryGetProperty("text", out var textElement)
+                ? textElement.GetString() ?? string.Empty
+                : result.Data.RootElement.GetRawText();
+
+            // Ensure directory exists
+            var directory = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await File.WriteAllTextAsync(outputPath, text).ConfigureAwait(false);
+
+            AnsiConsole.MarkupLine($"[green]✓[/] Result saved to [cyan]{Markup.Escape(outputPath)}[/]");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AnsiConsole.MarkupLine($"[yellow]⚠ Could not write to file:[/] {Markup.Escape(ex.Message)}");
         }
     }
 

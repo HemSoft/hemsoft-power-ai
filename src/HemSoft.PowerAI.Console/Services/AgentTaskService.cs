@@ -105,9 +105,13 @@ internal sealed class AgentTaskService : IAsyncDisposable
     /// Submits a research task and returns the task ID.
     /// </summary>
     /// <param name="prompt">The research prompt.</param>
+    /// <param name="outputPath">Optional file path to write result to.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The task ID for tracking.</returns>
-    public async Task<string> SubmitResearchTaskAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<string> SubmitResearchTaskAsync(
+        string prompt,
+        string? outputPath = null,
+        CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(this.disposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
@@ -117,7 +121,8 @@ internal sealed class AgentTaskService : IAsyncDisposable
             TaskId: taskId,
             AgentType: "research",
             Prompt: prompt,
-            SubmittedAt: this.timeProvider.GetUtcNow());
+            SubmittedAt: this.timeProvider.GetUtcNow(),
+            OutputPath: outputPath);
 
         // Register a pending task before submitting
         var tcs = new TaskCompletionSource<AgentTaskResult>(TaskCreationOptions.RunContinuationsAsynchronously);
