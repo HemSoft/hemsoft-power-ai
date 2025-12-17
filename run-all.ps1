@@ -7,7 +7,8 @@
     Launches all components in the correct order:
     1. Aspire Dashboard (Docker container for telemetry)
     2. A2A Agent Host (ASP.NET Core - separate terminal)
-    3. Console App (current terminal)
+    3. Agent Worker (Background service for Redis tasks - separate terminal)
+    4. Console App (current terminal)
 
 .PARAMETER Mode
     Console mode: 'chat' (default) or 'spam'
@@ -17,6 +18,9 @@
 
 .PARAMETER SkipAgents
     Skip starting the A2A Agent Host
+
+.PARAMETER SkipWorker
+    Skip starting the Agent Worker
 
 .EXAMPLE
     ./run-all.ps1
@@ -36,7 +40,8 @@ param(
     [string]$Mode = 'chat',
 
     [switch]$SkipAspire,
-    [switch]$SkipAgents
+    [switch]$SkipAgents,
+    [switch]$SkipWorker
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,7 +52,7 @@ Write-Host " - " -NoNewline
 
 # Step 1: Start Aspire Dashboard
 if (-not $SkipAspire) {
-    Write-Host "[1/3] Aspire" -ForegroundColor Yellow -NoNewline
+    Write-Host "[1/4] Aspire" -ForegroundColor Yellow -NoNewline
 
     $dockerAvailable = Get-Command docker -ErrorAction SilentlyContinue
     if (-not $dockerAvailable) {
@@ -70,37 +75,53 @@ if (-not $SkipAspire) {
     }
 }
 else {
-    Write-Host "[1/3] -" -ForegroundColor DarkGray -NoNewline
+    Write-Host "[1/4] -" -ForegroundColor DarkGray -NoNewline
 }
 
 Write-Host " → " -ForegroundColor DarkGray -NoNewline
 
 # Step 2: Start A2A Agent Host
 if (-not $SkipAgents) {
-    Write-Host "[2/3] AgentHost" -ForegroundColor Yellow -NoNewline
+    Write-Host "[2/4] AgentHost" -ForegroundColor Yellow -NoNewline
 
     # Start agent host in new terminal
     $agentHostPath = Join-Path $ScriptRoot "src/HemSoft.PowerAI.AgentHost"
     Start-Process pwsh -ArgumentList "-NoExit", "-Command", "Set-Location '$agentHostPath'; dotnet run"
 
     Write-Host " ✓" -ForegroundColor Green -NoNewline
+}
+else {
+    Write-Host "[2/4] -" -ForegroundColor DarkGray -NoNewline
+}
 
-    # Give agent host time to start (show countdown)
+Write-Host " → " -ForegroundColor DarkGray -NoNewline
+
+# Step 3: Start Agent Worker
+if (-not $SkipWorker) {
+    Write-Host "[3/4] Worker" -ForegroundColor Yellow -NoNewline
+
+    # Start worker in new terminal
+    $workerPath = Join-Path $ScriptRoot "src/HemSoft.PowerAI.AgentWorker"
+    Start-Process pwsh -ArgumentList "-NoExit", "-Command", "Set-Location '$workerPath'; `$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4317'; dotnet run"
+
+    Write-Host " ✓" -ForegroundColor Green -NoNewline
+
+    # Give services time to start (show countdown)
     Write-Host " (init" -ForegroundColor DarkGray -NoNewline
-    for ($i = 5; $i -gt 0; $i--) {
+    for ($i = 3; $i -gt 0; $i--) {
         Write-Host "." -ForegroundColor DarkGray -NoNewline
         Start-Sleep -Seconds 1
     }
     Write-Host ")" -ForegroundColor DarkGray -NoNewline
 }
 else {
-    Write-Host "[2/3] -" -ForegroundColor DarkGray -NoNewline
+    Write-Host "[3/4] -" -ForegroundColor DarkGray -NoNewline
 }
 
 Write-Host " → " -ForegroundColor DarkGray -NoNewline
 
-# Step 3: Start Console App
-Write-Host "[3/3] Console" -ForegroundColor Yellow -NoNewline
+# Step 4: Start Console App
+Write-Host "[4/4] Console" -ForegroundColor Yellow -NoNewline
 Write-Host " ✓" -ForegroundColor Green
 Write-Host ""
 

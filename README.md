@@ -5,40 +5,80 @@ AI-powered command-line assistant with multi-agent orchestration using Microsoft
 ## Quick Start
 
 1. Set required environment variables:
-   
+
    ```powershell
    $env:OPENROUTER_API_KEY = "your-api-key"
    $env:OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
    ```
 
-2. Run the app:
-   
+2. Run the full stack (Console + AgentWorker + AgentHost):
+
+   ```powershell
+   .\run-all.ps1
+   ```
+
+   Or run just the Console:
+
    ```powershell
    .\run.ps1
    ```
 
-3. Chat naturally or type `/` to select an agent.
+3. Chat naturally or type `/` to access the menu.
+
+## Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                    HemSoft.PowerAI.Console (Publisher)               │
+│  User: /agents → "Research competitor pricing for widgets"          │
+│  → Publishes AgentTaskRequest to Redis                              │
+│  → Continues chatting...                                            │
+│  → Receives AgentTaskResult notification                            │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         REDIS (Pub/Sub)                              │
+│  agents:tasks          → Task channel for worker consumption        │
+│  agents:results:{id}   → Completion notifications per task          │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                 HemSoft.PowerAI.AgentWorker (Subscriber)             │
+│  → Subscribes to agents:tasks channel                               │
+│  → Executes agent autonomously (ResearchAgent, etc.)                │
+│  → Publishes AgentTaskResult to agents:results:{taskId}             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Project Structure
+
+| Project | Purpose |
+|---------|---------|
+| **Console** | Interactive UI, task publisher |
+| **AgentWorker** | Background task processor (Redis subscriber) |
+| **AgentHost** | A2A HTTP protocol hosting |
+| **Shared** | Common models, interfaces, agents |
 
 ## Usage
 
-The app has two modes:
+The app has two modes accessible via `/`:
 
-| Mode       | How       | What it does                                                       |
-| ---------- | --------- | ------------------------------------------------------------------ |
-| **Chat**   | Just type | Natural conversation with tool access (terminal, web search, mail) |
-| **Agents** | Type `/`  | Select a specialized agent for specific tasks                      |
+| Option | What it does |
+|--------|--------------|
+| **Model** | Change the AI model |
+| **Agents** | Submit async tasks to agents |
 
-### Available Agents
+### Agent Tasks (Event-Driven)
 
-| Agent            | Purpose                                                           |
-| ---------------- | ----------------------------------------------------------------- |
-| **Coordinator**  | Multi-agent orchestration - delegates tasks to specialized agents |
-| **SpamFilter**   | Interactive spam filter with autonomous capabilities              |
-| **SpamScan**     | Autonomous scan: identifies suspicious email domains              |
-| **SpamReview**   | Human review: batch review flagged domains                        |
-| **SpamCleanup**  | Cleanup: move emails from blocked domains to junk                 |
-| **HostResearch** | A2A server: hosts ResearchAgent for remote access                 |
-| **Distributed**  | A2A client: connects to remote agents                             |
+Submit research tasks that execute asynchronously:
+
+1. Type `/` and select **Agents**
+2. Choose **Submit Research Task**
+3. Enter your research query
+4. Continue chatting while the task runs in background
+5. Get notified when results are ready
 
 ### Built-in Tools
 

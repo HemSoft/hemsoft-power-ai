@@ -23,6 +23,7 @@ obj/
 ## Test Results
 TestResults/
 coverage-report/
+CoverageReport/
 
 ## User-specific files
 appsettings.Development.json

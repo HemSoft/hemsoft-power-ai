@@ -1,6 +1,6 @@
 ---
 title: "ARCHITECTURE.md"
-version: "1.0.0"
+version: "1.1.0"
 lastModified: "2025-12-16"
 author: "HemSoft"
 purpose: "System architecture for HemSoft Power AI"
@@ -15,7 +15,7 @@ purpose: "System architecture for HemSoft Power AI"
 The ultimate goal is a system where users submit tasks to agents that execute autonomously in the background, returning structured results via events. This enables:
 
 - **Non-blocking UX** - Submit task, continue chatting, get notified when complete
-- **Scalable execution** - Workers can run in-process or as separate services
+- **Scalable execution** - Workers run as separate processes for independent scaling
 - **Observable workflows** - Redis provides visibility into task queue and progress
 - **Structured results** - Agents return typed JSON responses, not just text
 
@@ -25,7 +25,7 @@ The ultimate goal is a system where users submit tasks to agents that execute au
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         CONSOLE APP                                  │
+│                    HemSoft.PowerAI.Console (Publisher)               │
 │  User: /agents → "Research competitor pricing for widgets"          │
 │  → Publishes AgentTaskRequest to Redis                              │
 │  → Subscribes to results channel                                    │
@@ -35,20 +35,58 @@ The ultimate goal is a system where users submit tasks to agents that execute au
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         REDIS                                        │
-│  agents:tasks          → Task queue                                 │
-│  agents:results:{id}   → Completion notifications                   │
+│                         REDIS (Pub/Sub)                              │
+│  agents:tasks          → Task channel for worker consumption        │
+│  agents:results:{id}   → Completion notifications per task          │
 │  agents:progress:{id}  → Optional progress updates                  │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    AGENT WORKER (Background)                         │
-│  → Picks up AgentTaskRequest                                        │
+│                 HemSoft.PowerAI.AgentWorker (Subscriber)             │
+│  → Subscribes to agents:tasks channel                               │
 │  → Executes agent autonomously (ResearchAgent, etc.)                │
-│  → Publishes AgentTaskResult (structured JSON)                      │
+│  → Publishes AgentTaskResult to agents:results:{taskId}             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Project Structure
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           HemSoft.PowerAI.Shared                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ Models/              │ Services/               │ Agents/              │  │
+│  │ - AgentTaskRequest   │ - IAgentTaskBroker      │ - ResearchAgent      │  │
+│  │ - AgentTaskResult    │ - RedisAgentTaskBroker  │ - AgentFactory       │  │
+│  │ - AgentTaskStatus    │                         │ - AgentCards         │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                    Shared abstractions, models, and agent definitions        │
+└─────────────────────────────────────────────────────────────────────────────┘
+              │                       │                       │
+              │ references            │ references            │ references
+              ▼                       ▼                       ▼
+┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
+│ HemSoft.PowerAI.      │ │ HemSoft.PowerAI.      │ │ HemSoft.PowerAI.      │
+│ Console               │ │ AgentWorker           │ │ AgentHost             │
+│ ─────────────────     │ │ ─────────────────     │ │ ─────────────────     │
+│ - Interactive UI      │ │ - AgentWorkerService  │ │ - A2A HTTP hosting    │
+│ - AgentTaskService    │ │ - BackgroundService   │ │ - MapA2A() endpoints  │
+│ - Task submission     │ │ - Task processing     │ │ - Agent discovery     │
+│ (Publisher)           │ │ (Subscriber)          │ │ (HTTP Protocol)       │
+└───────────────────────┘ └───────────────────────┘ └───────────────────────┘
+```
+
+### Separation of Concerns
+
+| Project | Concern | Protocol |
+|---------|---------|----------|
+| **Console** | User interaction, task submission | Redis Pub (Publisher) |
+| **AgentWorker** | Background task processing | Redis Sub (Subscriber) |
+| **AgentHost** | HTTP-based agent exposure | A2A over HTTP |
+| **Shared** | Common models, interfaces, agents | N/A (Library) |
 
 ---
 
@@ -66,9 +104,34 @@ The primary user interface providing:
 **Key Responsibilities:**
 
 - User interaction and command parsing
-- Task submission to Redis queue
+- Task submission to Redis (publishing)
 - Result subscription and display
 - Model selection and configuration
+
+**Key Classes:**
+
+- `AgentTaskService` - Facade for task submission and result tracking
+- `Program.cs` - Main chat loop and command routing
+
+### Agent Worker (`HemSoft.PowerAI.AgentWorker`)
+
+Dedicated background service that processes agent tasks:
+
+- Subscribes to Redis `agents:tasks` channel
+- Routes tasks to appropriate agents
+- Publishes results to `agents:results:{taskId}`
+
+**Key Responsibilities:**
+
+- Task subscription (consuming from Redis)
+- Agent routing based on `AgentType`
+- Result publishing
+- Error handling and status reporting
+
+**Key Classes:**
+
+- `AgentWorkerService` - `BackgroundService` that processes tasks
+- `Program.cs` - Worker host configuration
 
 ### Agent Host (`HemSoft.PowerAI.AgentHost`)
 
@@ -84,13 +147,16 @@ ASP.NET Core service hosting agents via the A2A (Agent-to-Agent) protocol:
 - Agent lifecycle management
 - Remote agent discovery
 
+**Note:** AgentHost is for HTTP-based A2A protocol, **not** Redis pub/sub.
+
 ### Shared Library (`HemSoft.PowerAI.Shared`)
 
-Common abstractions and tools shared across projects:
+Common abstractions and implementations shared across projects:
 
-- Agent base classes and interfaces
-- Tool definitions and implementations
-- Cross-cutting concerns
+- Agent definitions (ResearchAgent, etc.)
+- Task broker interface and Redis implementation
+- Data models for task communication
+- Tool definitions
 
 ---
 
@@ -168,41 +234,48 @@ public enum AgentTaskStatus { Pending, Running, Completed, Failed, Cancelled }
 
 ## Deployment Model
 
-### Phase 1: In-Process Worker
+### Local Development
 
-Initial deployment runs the worker as a hosted service within the Console app:
+All three processes run locally via `run-all.ps1`:
 
-```csharp
-builder.Services.AddHostedService<AgentWorkerService>();
-builder.Services.AddSingleton<IAgentTaskQueue, RedisAgentTaskQueue>();
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                        run-all.ps1                                   │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
+│  │ Aspire Dashboard │  │ AgentHost        │  │ Console          │   │
+│  │ (Telemetry)      │  │ (A2A HTTP)       │  │ (Interactive)    │   │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘   │
+│                                                                      │
+│  ┌──────────────────┐                                               │
+│  │ AgentWorker      │   ← NEW: Separate process                     │
+│  │ (Redis Sub)      │                                               │
+│  └──────────────────┘                                               │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Benefits:**
+### Production Deployment
 
-- Simple deployment (single process)
-- Shared dependencies
-- Easy debugging
-
-### Phase 2: Separate Worker Process (Future)
-
-Scale by deploying workers independently:
+Scale workers independently via containers:
 
 ```text
 ┌──────────────┐     ┌───────┐     ┌──────────────┐
 │   Console    │────▶│ Redis │◀────│   Worker 1   │
+│  (Publisher) │     │       │     │  (Subscriber)│
 └──────────────┘     └───────┘     └──────────────┘
                          ▲
                          │
                     ┌────┴───────┐
                     │  Worker 2  │
+                    │  (Scale)   │
                     └────────────┘
 ```
 
 **Benefits:**
 
-- Independent scaling
-- Fault isolation
-- Resource optimization
+- **Independent scaling** - Add workers based on task volume
+- **Fault isolation** - Worker crash doesn't affect Console
+- **Resource optimization** - Workers can run on cheaper compute
+- **Zero-downtime deployments** - Update workers without Console restart
 
 ---
 

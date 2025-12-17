@@ -1,6 +1,6 @@
 ---
 title: "PLAN.md"
-version: "1.0.10"
+version: "1.0.13"
 lastModified: "2025-12-16"
 author: "HemSoft"
 purpose: "MS Agent Framework Migration Plan"
@@ -15,13 +15,13 @@ purpose: "MS Agent Framework Migration Plan"
 The ultimate goal is a system where users submit tasks to agents that execute autonomously in the background, returning structured results via events. This enables:
 
 - **Non-blocking UX** - Submit task, continue chatting, get notified when complete
-- **Scalable execution** - Workers can run in-process or as separate services
+- **Scalable execution** - Workers run as separate processes for independent scaling
 - **Observable workflows** - Redis provides visibility into task queue and progress
 - **Structured results** - Agents return typed JSON responses, not just text
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         CONSOLE APP                                  │
+│                 HemSoft.PowerAI.Console (Publisher)                  │
 │  User: / → Agents → "Research competitor pricing for widgets"       │
 │  → Publishes AgentTaskRequest to Redis                              │
 │  → Subscribes to results channel                                    │
@@ -31,19 +31,53 @@ The ultimate goal is a system where users submit tasks to agents that execute au
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         REDIS                                        │
-│  agents:tasks          → Task queue                                 │
-│  agents:results:{id}   → Completion notifications                   │
+│                         REDIS (Pub/Sub)                              │
+│  agents:tasks          → Task channel for worker consumption        │
+│  agents:results:{id}   → Completion notifications per task          │
 │  agents:progress:{id}  → Optional progress updates                  │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    AGENT WORKER (Background)                         │
-│  → Picks up AgentTaskRequest                                        │
+│               HemSoft.PowerAI.AgentWorker (Subscriber)               │
+│  → Subscribes to agents:tasks channel                               │
 │  → Executes agent autonomously (ResearchAgent, etc.)                │
-│  → Publishes AgentTaskResult (structured JSON)                      │
+│  → Publishes AgentTaskResult to agents:results:{taskId}             │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Project Structure
+
+```text
+HemSoft.PowerAI.sln
+├── src/
+│   ├── HemSoft.PowerAI.Shared/           # Shared models, interfaces, agents
+│   │   ├── Models/
+│   │   │   ├── AgentTaskRequest.cs
+│   │   │   ├── AgentTaskResult.cs
+│   │   │   └── AgentTaskStatus.cs
+│   │   ├── Services/
+│   │   │   ├── IAgentTaskBroker.cs
+│   │   │   └── RedisAgentTaskBroker.cs
+│   │   └── Agents/
+│   │       └── ResearchAgent.cs
+│   │
+│   ├── HemSoft.PowerAI.Console/          # Interactive UI (Publisher)
+│   │   └── Services/
+│   │       └── AgentTaskService.cs       # Task submission facade
+│   │
+│   ├── HemSoft.PowerAI.AgentWorker/      # Background worker (Subscriber)
+│   │   ├── AgentWorkerService.cs
+│   │   └── Program.cs
+│   │
+│   └── HemSoft.PowerAI.AgentHost/        # A2A HTTP server (separate protocol)
+│
+└── tests/
+    ├── HemSoft.PowerAI.Shared.Tests/
+    ├── HemSoft.PowerAI.Console.Tests/
+    └── HemSoft.PowerAI.AgentWorker.Tests/
 ```
 
 ---
@@ -72,11 +106,20 @@ Foundation work establishing MS Agent Framework patterns:
 
 ---
 
-## Phase 9: Event-Driven Autonomous Agents 🔴
+## Phase 9: Event-Driven Autonomous Agents 🟢
 
 **The main event.** Transform the agent system from synchronous request-response to asynchronous task execution.
 
-### Data Models
+### Architecture Decision: Separate Worker Process
+
+The worker runs as a dedicated `HemSoft.PowerAI.AgentWorker` project:
+
+- **Single Responsibility** - Console handles UI, Worker handles processing
+- **Independent Scaling** - Scale workers based on task volume
+- **Fault Isolation** - Worker crash doesn't affect Console UX
+- **Clean Separation** - Shared types in `HemSoft.PowerAI.Shared`
+
+### Data Models (in Shared)
 
 ```csharp
 // Task submission
@@ -84,7 +127,7 @@ public record AgentTaskRequest(
     string TaskId,           // GUID
     string AgentType,        // "research" for now, extensible later
     string Prompt,           // User's request
-    DateTime SubmittedAt);
+    DateTimeOffset SubmittedAt);
 
 // Task completion
 public record AgentTaskResult(
@@ -92,55 +135,51 @@ public record AgentTaskResult(
     AgentTaskStatus Status,  // Completed, Failed, Cancelled
     JsonDocument? Data,      // Structured result (schema varies by agent)
     string? Error,
-    DateTime CompletedAt);
+    DateTimeOffset CompletedAt);
 
 public enum AgentTaskStatus { Pending, Running, Completed, Failed, Cancelled }
 ```
 
 ### Tasks
 
-- [ ] **9.1** Add Redis infrastructure
+- [x] **9.1** Add Redis infrastructure
   - Add `StackExchange.Redis` package
-  - Create `IAgentTaskQueue` interface for task submission/subscription
-  - Create `RedisAgentTaskQueue` implementation
+  - Create `IAgentTaskBroker` interface for task submission/subscription
+  - Create `RedisAgentTaskBroker` implementation
   - Configuration via `appsettings.json` for Redis connection
 
-- [ ] **9.2** Create Agent Worker service
+- [x] **9.2** Create Agent Worker service
   - `AgentWorkerService` - Background service that processes tasks
   - Subscribes to `agents:tasks` channel
   - Routes to appropriate agent based on `AgentType`
   - Publishes results to `agents:results:{taskId}`
 
-- [ ] **9.3** Update Console for async task flow
-  - `/agents` prompts for task, submits to queue
-  - Shows "Task submitted" confirmation with task ID
-  - Background listener for results (notification when complete)
-  - Option to check task status
+- [x] **9.3** Update Console for async task flow
+  - `/agents` menu with Submit Research Task, Check Pending Tasks options
+  - `AgentTaskService` facade for task submission and result tracking
+  - Background listener for task results via Redis pub/sub
+  - Graceful fallback to synchronous mode when Redis unavailable
+  - Task ID tracking with short ID display (first 8 chars)
+  - Option to wait for results or continue chatting
 
 - [ ] **9.4** Update ResearchAgent for structured output
   - Define `ResearchResult` schema (findings, sources, recommendations)
   - Return structured JSON instead of markdown text
   - Console renders structured result nicely
 
-### Architecture Decision: In-Process First
-
-Start with the worker running as a background service in the same process:
-
-```csharp
-// Program.cs - register worker
-builder.Services.AddHostedService<AgentWorkerService>();
-builder.Services.AddSingleton<IAgentTaskQueue, RedisAgentTaskQueue>();
-```
-
-This keeps deployment simple while the Redis abstraction enables future scaling to separate worker processes.
+- [x] **9.5** Separate Worker into own project
+  - Create `HemSoft.PowerAI.AgentWorker` project
+  - Move shared types to `HemSoft.PowerAI.Shared`
+  - Update `run-all.ps1` to start Worker process
 
 ### Success Criteria
 
-- [ ] User can submit research task and continue chatting
-- [ ] Task executes asynchronously via Redis queue
+- [x] User can submit research task and continue chatting
+- [x] Task executes asynchronously via Redis pub/sub
 - [ ] Structured `ResearchResult` JSON returned
-- [ ] Console displays notification when task completes
-- [ ] Task history/status queryable
+- [x] Console displays notification when task completes
+- [x] Task history/status queryable
+- [x] Worker runs as separate process
 
 ---
 
@@ -157,28 +196,32 @@ After event-driven foundation is solid, add workflow orchestration.
 
 ---
 
-## Files Affected (Phase 9)
+## Files Affected (Phase 9.5 - Worker Separation)
 
 | File | Action |
 |------|--------|
-| `src/HemSoft.PowerAI.Console/Services/IAgentTaskQueue.cs` | NEW - Interface |
-| `src/HemSoft.PowerAI.Console/Services/RedisAgentTaskQueue.cs` | NEW - Redis impl |
-| `src/HemSoft.PowerAI.Console/Services/AgentWorkerService.cs` | NEW - Background worker |
-| `src/HemSoft.PowerAI.Console/Models/AgentTaskRequest.cs` | NEW - Task model |
-| `src/HemSoft.PowerAI.Console/Models/AgentTaskResult.cs` | NEW - Result model |
-| `src/HemSoft.PowerAI.Console/Agents/ResearchAgent.cs` | Structured output |
-| `src/HemSoft.PowerAI.Console/Program.cs` | Register services, update /agents |
-| `src/HemSoft.PowerAI.Console/appsettings.json` | Redis configuration |
+| `src/HemSoft.PowerAI.Shared/Models/AgentTaskRequest.cs` | ✅ Moved from Console |
+| `src/HemSoft.PowerAI.Shared/Models/AgentTaskResult.cs` | ✅ Moved from Console |
+| `src/HemSoft.PowerAI.Shared/Models/AgentTaskStatus.cs` | ✅ Moved from Console |
+| `src/HemSoft.PowerAI.Shared/Services/IAgentTaskBroker.cs` | ✅ Moved from Console |
+| `src/HemSoft.PowerAI.Shared/Services/RedisAgentTaskBroker.cs` | ✅ Moved from Console |
+| `src/HemSoft.PowerAI.AgentWorker/AgentWorkerService.cs` | ✅ Moved from Console |
+| `src/HemSoft.PowerAI.AgentWorker/Program.cs` | ✅ New worker host |
+| `src/HemSoft.PowerAI.AgentWorker/appsettings.json` | ✅ Redis config |
+| `run-all.ps1` | ✅ Start Worker process |
 
 ---
 
 ## Current State
 
-- ✅ **648 tests passing**
+- ✅ **687 tests passing**
 - ✅ **Build succeeds with no warnings**
 - ✅ Console simplified: `/` menu → Model | Agents
-- ✅ ResearchAgent works synchronously (placeholder for async)
-- 🚧 **Next:** Phase 9 - Redis event-driven architecture
+- ✅ Phase 9.1 complete - Redis infrastructure with `IAgentTaskBroker` and `RedisAgentTaskBroker`
+- ✅ Phase 9.2 complete - `AgentWorkerService` background worker
+- ✅ Phase 9.3 complete - Async task flow in Console with `AgentTaskService`
+- ✅ Phase 9.5 complete - Worker separated into `HemSoft.PowerAI.AgentWorker`
+- 🚧 **Next:** Phase 9.4 - Update ResearchAgent for structured output
 
 ---
 

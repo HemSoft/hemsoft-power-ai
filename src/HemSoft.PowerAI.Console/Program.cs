@@ -9,6 +9,9 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
+using HemSoft.PowerAI.Common.Configuration;
+using HemSoft.PowerAI.Common.Models;
+using HemSoft.PowerAI.Common.Services;
 using HemSoft.PowerAI.Console.Agents;
 using HemSoft.PowerAI.Console.Configuration;
 using HemSoft.PowerAI.Console.Extensions;
@@ -81,9 +84,12 @@ internal static partial class Program
         var a2aSettings = new Configuration.A2ASettings();
         configuration.GetSection(Configuration.A2ASettings.SectionName).Bind(a2aSettings);
 
+        var redisSettings = new RedisSettings();
+        configuration.GetSection(RedisSettings.SectionName).Bind(redisSettings);
+
         if (args.Length == 0)
         {
-            return await RunInteractiveChatAsync(spamSettings, a2aSettings, telemetry).ConfigureAwait(false);
+            return await RunInteractiveChatAsync(spamSettings, a2aSettings, redisSettings, telemetry).ConfigureAwait(false);
         }
 
         // Check for special commands
@@ -670,39 +676,18 @@ internal static partial class Program
     private static async Task<int> RunInteractiveChatAsync(
         SpamFilterSettings spamSettings,
         Configuration.A2ASettings a2aSettings,
+        RedisSettings redisSettings,
         TelemetrySetup telemetry)
     {
         using var activity = telemetry.ActivitySource.StartActivity("RunInteractiveChat");
 
-        var openRouterBaseUrlValue = Environment.GetEnvironmentVariable(OpenRouterBaseUrlEnvVar);
-        if (string.IsNullOrEmpty(openRouterBaseUrlValue))
+        var openRouterResult = ValidateOpenRouterConfig(activity);
+        if (openRouterResult is null)
         {
-            AnsiConsole.Write(new Panel(
-                $"[red]Missing {OpenRouterBaseUrlEnvVar} environment variable.[/]\n\n" +
-                "Set it with:\n" +
-                $"[dim]$env:{OpenRouterBaseUrlEnvVar} = \"https://openrouter.ai/api/v1\"[/]")
-                .Header("[yellow]Configuration Error[/]")
-                .Border(BoxBorder.Rounded));
-            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_BASE_URL");
             return 1;
         }
 
-        var openRouterBaseUrl = new Uri(openRouterBaseUrlValue);
-
-        // Validate API key
-        const string apiKeyEnvVar = "OPENROUTER_API_KEY";
-        var apiKey = Environment.GetEnvironmentVariable(apiKeyEnvVar);
-        if (string.IsNullOrEmpty(apiKey))
-        {
-            AnsiConsole.Write(new Panel(
-                $"[red]Missing {apiKeyEnvVar} environment variable.[/]\n\n" +
-                "Set it with:\n" +
-                $"[dim]$env:{apiKeyEnvVar} = \"your-api-key\"[/]")
-                .Header("[yellow]Configuration Error[/]")
-                .Border(BoxBorder.Rounded));
-            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_API_KEY");
-            return 1;
-        }
+        var (openRouterBaseUrl, apiKey) = openRouterResult.Value;
 
         // Create OpenAI client pointing to OpenRouter
         var openAiClient = new OpenAIClient(
@@ -712,21 +697,7 @@ internal static partial class Program
         // Create chat client with function invocation support
         using var chatClient = CompositeDisposableChatClient.CreateWithFunctionInvocation(openAiClient, ModelId);
 
-        // Initialize graph client and mail tools
-        var graphClientProvider = new DefaultGraphClientProvider();
-        var spamStorageService = new SpamStorageService(spamSettings);
-        var outlookMailTools = new OutlookMailTools(graphClientProvider, spamStorageService);
-
-        // Register tools
-        var tools = new ChatOptions
-        {
-            Tools =
-            [
-                AIFunctionFactory.Create(TerminalTools.Terminal),
-                AIFunctionFactory.Create(WebSearchTools.WebSearchAsync),
-                AIFunctionFactory.Create(outlookMailTools.MailAsync),
-            ],
-        };
+        var tools = CreateChatTools(spamSettings);
 
         // Fetch model info from OpenRouter
         using var modelService = new OpenRouterModelService(ModelId);
@@ -737,13 +708,109 @@ internal static partial class Program
         // Chat history for context
         List<ChatMessage> history = [];
 
-        // Main chat loop
-        await RunChatLoopAsync(chatClient, tools, history, spamSettings, a2aSettings, telemetry, modelService)
-            .ConfigureAwait(false);
+        var (broker, taskService) = await CreateTaskServiceAsync(redisSettings).ConfigureAwait(false);
+
+        try
+        {
+            var context = new CommandContext(
+                spamSettings,
+                a2aSettings,
+                redisSettings,
+                telemetry,
+                modelService,
+                taskService);
+            await RunChatLoopAsync(chatClient, tools, history, context).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (taskService is not null)
+            {
+                await taskService.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (broker is not null)
+            {
+                await broker.DisposeAsync().ConfigureAwait(false);
+            }
+        }
 
         AnsiConsole.MarkupLine("[dim]Goodbye![/]");
         _ = activity?.SetStatus(ActivityStatusCode.Ok);
         return 0;
+    }
+
+    private static (Uri BaseUrl, string ApiKey)? ValidateOpenRouterConfig(Activity? activity)
+    {
+        var openRouterBaseUrlValue = Environment.GetEnvironmentVariable(OpenRouterBaseUrlEnvVar);
+        if (string.IsNullOrEmpty(openRouterBaseUrlValue))
+        {
+            AnsiConsole.Write(new Panel(
+                "[red]Missing " + OpenRouterBaseUrlEnvVar + " environment variable.[/]\n\n" +
+                "Set it with:\n" +
+                "[dim]$env:" + OpenRouterBaseUrlEnvVar + " = \"https://openrouter.ai/api/v1\"[/]")
+                .Header("[yellow]Configuration Error[/]")
+                .Border(BoxBorder.Rounded));
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_BASE_URL");
+            return null;
+        }
+
+        const string apiKeyEnvVar = "OPENROUTER_API_KEY";
+        var apiKey = Environment.GetEnvironmentVariable(apiKeyEnvVar);
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            AnsiConsole.Write(new Panel(
+                "[red]Missing " + apiKeyEnvVar + " environment variable.[/]\n\n" +
+                "Set it with:\n" +
+                "[dim]$env:" + apiKeyEnvVar + " = \"your-api-key\"[/]")
+                .Header("[yellow]Configuration Error[/]")
+                .Border(BoxBorder.Rounded));
+            _ = activity?.SetStatus(ActivityStatusCode.Error, "Missing OPENROUTER_API_KEY");
+            return null;
+        }
+
+        return (new Uri(openRouterBaseUrlValue), apiKey);
+    }
+
+    private static ChatOptions CreateChatTools(SpamFilterSettings spamSettings)
+    {
+        var graphClientProvider = new DefaultGraphClientProvider();
+        var spamStorageService = new SpamStorageService(spamSettings);
+        var outlookMailTools = new OutlookMailTools(graphClientProvider, spamStorageService);
+
+        return new ChatOptions
+        {
+            Tools =
+            [
+                AIFunctionFactory.Create(TerminalTools.Terminal),
+                AIFunctionFactory.Create(WebSearchTools.WebSearchAsync),
+                AIFunctionFactory.Create(outlookMailTools.MailAsync),
+            ],
+        };
+    }
+
+    private static async Task<(RedisAgentTaskBroker? Broker, AgentTaskService? Service)> CreateTaskServiceAsync(
+        RedisSettings redisSettings)
+    {
+        RedisAgentTaskBroker? broker = null;
+
+        try
+        {
+            broker = new RedisAgentTaskBroker(redisSettings.ConnectionString);
+            var taskService = new AgentTaskService(broker);
+            AnsiConsole.MarkupLine("[dim]Redis connected - async agent tasks enabled[/]\n");
+            return (broker, taskService);
+        }
+        catch (Exception ex)
+            when (ex is StackExchange.Redis.RedisConnectionException or StackExchange.Redis.RedisException)
+        {
+            AnsiConsole.MarkupLine("[dim]Redis unavailable - using synchronous agent mode[/]\n");
+            if (broker is not null)
+            {
+                await broker.DisposeAsync().ConfigureAwait(false);
+            }
+
+            return (null, null);
+        }
     }
 
     private static void DisplayHeader(ChatOptions tools, OpenRouterModelService modelService)
@@ -818,13 +885,9 @@ internal static partial class Program
         IChatClient chatClient,
         ChatOptions tools,
         List<ChatMessage> history,
-        SpamFilterSettings spamSettings,
-        Configuration.A2ASettings a2aSettings,
-        TelemetrySetup telemetry,
-        OpenRouterModelService modelService)
+        CommandContext context)
     {
         var sessionTokens = new TokenUsageTracker();
-        var context = new CommandContext(spamSettings, a2aSettings, telemetry, modelService);
 
         while (true)
         {
@@ -844,8 +907,13 @@ internal static partial class Program
 
             history.Add(new ChatMessage(ChatRole.User, userInput));
 
-            await ProcessUserInputAsync(chatClient, tools, history, sessionTokens, telemetry, modelService)
-                .ConfigureAwait(false);
+            await ProcessUserInputAsync(
+                chatClient,
+                tools,
+                history,
+                sessionTokens,
+                context.Telemetry,
+                context.ModelService).ConfigureAwait(false);
         }
     }
 
@@ -999,9 +1067,27 @@ internal static partial class Program
 
     private static async Task RunAgentsMenuAsync(CommandContext context)
     {
-        _ = context; // Reserved for future use with event-driven architecture
+        // Show menu for agent operations
+        var choice = await AnsiConsole.PromptAsync(
+            new SelectionPrompt<string>()
+                .Title("[blue]Agent Tasks[/]")
+                .HighlightStyle(new Style(Color.Black, Color.Cyan))
+                .AddChoices("Submit Research Task", "Check Pending Tasks", "Back")).ConfigureAwait(false);
 
-        // For now, just ResearchAgent - will expand with event-driven architecture
+        switch (choice)
+        {
+            case "Submit Research Task":
+                await SubmitResearchTaskAsync(context).ConfigureAwait(false);
+                break;
+
+            case "Check Pending Tasks":
+                await CheckPendingTasksAsync(context).ConfigureAwait(false);
+                break;
+        }
+    }
+
+    private static async Task SubmitResearchTaskAsync(CommandContext context)
+    {
         var prompt = await AnsiConsole.PromptAsync(
             new TextPrompt<string>("[blue]Research Agent[/] - Enter your research task:")
                 .AllowEmpty()).ConfigureAwait(false);
@@ -1012,9 +1098,86 @@ internal static partial class Program
             return;
         }
 
-        // Phase 9: Replace with event-driven task submission via Redis
-        // For now, run synchronously using ResearchAgent
-        AnsiConsole.MarkupLine("[dim]Running research task...[/]");
+        // Use async task submission if Redis is available
+        if (context.TaskService is not null)
+        {
+            await SubmitAsyncResearchTaskAsync(context.TaskService, prompt).ConfigureAwait(false);
+        }
+        else
+        {
+            await RunSynchronousResearchAsync(prompt).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task SubmitAsyncResearchTaskAsync(AgentTaskService taskService, string prompt)
+    {
+        AnsiConsole.MarkupLine("[dim]Submitting task to agent queue...[/]");
+
+        try
+        {
+            var taskId = await taskService.SubmitResearchTaskAsync(prompt).ConfigureAwait(false);
+            var shortId = taskId[..8];
+            var displayPrompt = prompt.Length > 50 ? prompt[..50] + "..." : prompt;
+
+            AnsiConsole.Write(new Panel(
+                "[green]Task submitted successfully![/]\n\n" +
+                "[dim]Task ID:[/] [cyan]" + shortId + "...[/]\n" +
+                "[dim]Prompt:[/] " + Markup.Escape(displayPrompt) + "\n\n" +
+                "[dim]The task is now running in the background. You can continue chatting.[/]\n" +
+                "[dim]Use 'Check Pending Tasks' in the /agents menu to see results.[/]")
+                .Header("[cyan]Research Task Queued[/]")
+                .Border(BoxBorder.Rounded)
+                .BorderColor(Color.Cyan));
+            AnsiConsole.WriteLine();
+
+            // Optionally wait for quick results
+            var waitChoice = await AnsiConsole.PromptAsync(
+                new SelectionPrompt<string>()
+                    .Title("[dim]Would you like to wait for the result?[/]")
+                    .AddChoices("Wait (up to 2 minutes)", "Continue chatting")).ConfigureAwait(false);
+
+            if (waitChoice.StartsWith("Wait", StringComparison.Ordinal))
+            {
+                await WaitForTaskResultAsync(taskService, taskId).ConfigureAwait(false);
+            }
+        }
+        catch (StackExchange.Redis.RedisException ex)
+        {
+            AnsiConsole.MarkupLine("[yellow]Redis error:[/] " + Markup.Escape(ex.Message));
+            AnsiConsole.MarkupLine("[dim]Falling back to synchronous execution...[/]");
+            await RunSynchronousResearchAsync(prompt).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task WaitForTaskResultAsync(AgentTaskService taskService, string taskId)
+    {
+        AgentTaskResult? result = null;
+
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(Style.Parse("cyan"))
+            .StartAsync("Waiting for result...", async _ =>
+            {
+                result = await taskService.WaitForResultAsync(
+                    taskId,
+                    TimeSpan.FromMinutes(2)).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+
+        if (result is not null)
+        {
+            AnsiConsole.WriteLine();
+            AgentTaskService.DisplayResult(result);
+            AnsiConsole.WriteLine();
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("[yellow]Task still running. Check back later with 'Check Pending Tasks'.[/]\n");
+        }
+    }
+
+    private static async Task RunSynchronousResearchAsync(string prompt)
+    {
+        AnsiConsole.MarkupLine("[dim]Running research task synchronously...[/]");
 
         try
         {
@@ -1052,8 +1215,82 @@ internal static partial class Program
         }
         catch (HttpRequestException ex)
         {
-            AnsiConsole.MarkupLine($"[red]Network error:[/] {Markup.Escape(ex.Message)}");
+            AnsiConsole.MarkupLine("[red]Network error:[/] " + Markup.Escape(ex.Message));
         }
+    }
+
+    private static async Task CheckPendingTasksAsync(CommandContext context)
+    {
+        if (context.TaskService is null)
+        {
+            AnsiConsole.MarkupLine("[yellow]Redis not available. Async task tracking requires Redis.[/]\n");
+            return;
+        }
+
+        var pendingIds = context.TaskService.GetPendingTaskIds();
+        var completedTasks = context.TaskService.GetCompletedTasks();
+
+        if (pendingIds.Count == 0 && completedTasks.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[dim]No tasks submitted this session.[/]\n");
+            return;
+        }
+
+        await DisplayCompletedTasksAsync(completedTasks).ConfigureAwait(false);
+        DisplayPendingTasks(pendingIds);
+    }
+
+    private static async Task DisplayCompletedTasksAsync(IReadOnlyCollection<AgentTaskResult> completedTasks)
+    {
+        if (completedTasks.Count == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.MarkupLine("[green]Completed Tasks (" + completedTasks.Count.ToInvariant() + "):[/]");
+        foreach (var task in completedTasks.OrderByDescending(t => t.CompletedAt))
+        {
+            var shortId = task.TaskId[..8];
+            var statusColor = task.Status == AgentTaskStatus.Completed ? "green" : "red";
+            AnsiConsole.MarkupLine("  [" + statusColor + "]●[/] " + shortId + "... - [" + statusColor + "]" + task.Status + "[/]");
+        }
+
+        AnsiConsole.WriteLine();
+
+        // Offer to view a completed task
+        var choices = completedTasks
+            .Select(t => t.TaskId[..8] + "... (" + t.Status + ")")
+            .Prepend("Back")
+            .ToList();
+
+        var viewChoice = await AnsiConsole.PromptAsync(
+            new SelectionPrompt<string>()
+                .Title("[dim]View a completed task?[/]")
+                .AddChoices(choices)).ConfigureAwait(false);
+
+        if (!viewChoice.Equals("Back", StringComparison.Ordinal))
+        {
+            var selectedTask = completedTasks.First(
+                t => viewChoice.StartsWith(t.TaskId[..8], StringComparison.Ordinal));
+            AgentTaskService.DisplayResult(selectedTask);
+            AnsiConsole.WriteLine();
+        }
+    }
+
+    private static void DisplayPendingTasks(IReadOnlyCollection<string> pendingIds)
+    {
+        if (pendingIds.Count == 0)
+        {
+            return;
+        }
+
+        AnsiConsole.MarkupLine("[yellow]Pending Tasks (" + pendingIds.Count.ToInvariant() + "):[/]");
+        foreach (var taskId in pendingIds)
+        {
+            AnsiConsole.MarkupLine("  [yellow]○[/] " + taskId[..8] + "... - [dim]running[/]");
+        }
+
+        AnsiConsole.WriteLine();
     }
 
     private static async Task ProcessUserInputAsync(
@@ -1229,11 +1466,15 @@ internal static partial class Program
     /// </summary>
     /// <param name="SpamSettings">Spam filter configuration.</param>
     /// <param name="A2ASettings">A2A protocol settings.</param>
+    /// <param name="RedisSettings">Redis configuration.</param>
     /// <param name="Telemetry">Telemetry setup for tracing.</param>
     /// <param name="ModelService">OpenRouter model service.</param>
+    /// <param name="TaskService">Agent task service for async task submission.</param>
     private sealed record CommandContext(
         SpamFilterSettings SpamSettings,
         Configuration.A2ASettings A2ASettings,
+        RedisSettings RedisSettings,
         TelemetrySetup Telemetry,
-        OpenRouterModelService ModelService);
+        OpenRouterModelService ModelService,
+        AgentTaskService? TaskService);
 }

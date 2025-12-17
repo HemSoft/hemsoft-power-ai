@@ -18,6 +18,8 @@
     <ThresholdStat>total</ThresholdStat>
     <ExcludeByFile>**/Program.cs,**/obj/**/*.cs</ExcludeByFile>
     <ExcludeByAttribute>ExcludeFromCodeCoverage,GeneratedCodeAttribute</ExcludeByAttribute>
+    <!-- Exclude Shared assembly - it's tested by Console.Tests and Common.Tests -->
+    <Exclude>[HemSoft.PowerAI.Shared]*</Exclude>
   </PropertyGroup>
 
   <ItemGroup>
@@ -35,7 +37,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\HemSoft.PowerAI.Console\HemSoft.PowerAI.Console.csproj" />
+    <ProjectReference Include="..\..\src\HemSoft.PowerAI.AgentWorker\HemSoft.PowerAI.AgentWorker.csproj" />
     <ProjectReference Include="..\..\src\HemSoft.PowerAI.Shared\HemSoft.PowerAI.Shared.csproj" />
   </ItemGroup>
 

@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="HemSoft.PowerAI.Console" />
+    <InternalsVisibleTo Include="HemSoft.PowerAI.AgentWorker" />
     <InternalsVisibleTo Include="HemSoft.PowerAI.Shared.Tests" />
   </ItemGroup>
 
@@ -20,6 +21,7 @@
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.0.1-preview.1.25571.5" />
     <PackageReference Include="Microsoft.Graph" Version="5.98.0" />
     <PackageReference Include="Microsoft.Identity.Client.Extensions.Msal" Version="4.79.2" />
+    <PackageReference Include="StackExchange.Redis" Version="2.10.1" />
   </ItemGroup>
 
 </Project>
