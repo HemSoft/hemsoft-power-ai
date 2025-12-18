@@ -710,6 +710,11 @@ internal static partial class Program
 
         var (broker, taskService) = await CreateTaskServiceAsync(redisSettings).ConfigureAwait(false);
 
+        // Create console log service for file-based logging
+        using var logService = new ConsoleLogService();
+        AnsiConsole.MarkupLine($"[dim]Log file: {Markup.Escape(logService.CurrentLogPath)}[/]\n");
+        logService.Log("Session started");
+
         try
         {
             var context = new CommandContext(
@@ -718,7 +723,8 @@ internal static partial class Program
                 redisSettings,
                 telemetry,
                 modelService,
-                taskService);
+                taskService,
+                logService);
             await RunChatLoopAsync(chatClient, tools, history, context).ConfigureAwait(false);
         }
         finally
@@ -788,28 +794,22 @@ internal static partial class Program
         };
     }
 
-    private static async Task<(RedisAgentTaskBroker? Broker, AgentTaskService? Service)> CreateTaskServiceAsync(
+    private static Task<(RedisAgentTaskBroker? Broker, AgentTaskService? Service)> CreateTaskServiceAsync(
         RedisSettings redisSettings)
     {
-        RedisAgentTaskBroker? broker = null;
-
         try
         {
-            broker = new RedisAgentTaskBroker(redisSettings.ConnectionString);
+            // Use factory method that handles storage internally
+            var broker = RedisAgentTaskBroker.CreateWithStorage(redisSettings.ConnectionString);
             var taskService = new AgentTaskService(broker);
             AnsiConsole.MarkupLine("[dim]Redis connected - async agent tasks enabled[/]\n");
-            return (broker, taskService);
+            return Task.FromResult<(RedisAgentTaskBroker?, AgentTaskService?)>((broker, taskService));
         }
         catch (Exception ex)
             when (ex is StackExchange.Redis.RedisConnectionException or StackExchange.Redis.RedisException)
         {
             AnsiConsole.MarkupLine("[dim]Redis unavailable - using synchronous agent mode[/]\n");
-            if (broker is not null)
-            {
-                await broker.DisposeAsync().ConfigureAwait(false);
-            }
-
-            return (null, null);
+            return Task.FromResult<(RedisAgentTaskBroker?, AgentTaskService?)>((null, null));
         }
     }
 
@@ -1105,7 +1105,7 @@ internal static partial class Program
         // Use async task submission if Redis is available
         if (context.TaskService is not null)
         {
-            await SubmitAsyncResearchTaskAsync(context.TaskService, prompt).ConfigureAwait(false);
+            await SubmitAsyncResearchTaskAsync(context.TaskService, context.LogService, prompt).ConfigureAwait(false);
         }
         else
         {
@@ -1131,7 +1131,7 @@ internal static partial class Program
         // Use distributed execution if TaskService is available
         if (context.TaskService is not null)
         {
-            await SubmitIterativeResearchTaskAsync(context.TaskService, prompt, outputPath).ConfigureAwait(false);
+            await SubmitIterativeResearchTaskAsync(context.TaskService, context.LogService, prompt, outputPath).ConfigureAwait(false);
         }
         else
         {
@@ -1142,27 +1142,37 @@ internal static partial class Program
 
     private static async Task SubmitIterativeResearchTaskAsync(
         AgentTaskService taskService,
+        ConsoleLogService logService,
         string prompt,
         string? outputPath)
     {
         try
         {
-            var (_, result) = await ExecuteIterativeTaskWithProgressAsync(taskService, prompt, outputPath).ConfigureAwait(false);
+            var (_, result) = await ExecuteIterativeTaskWithProgressAsync(
+                taskService,
+                logService,
+                prompt,
+                outputPath).ConfigureAwait(false);
             await HandleTaskResultAsync(result, outputPath).ConfigureAwait(false);
         }
         catch (StackExchange.Redis.RedisException ex)
         {
+            logService.LogError("Redis error during iterative research", ex);
             AnsiConsole.MarkupLine("[yellow]Redis error:[/] " + Markup.Escape(ex.Message));
         }
     }
 
     private static async Task<(string? TaskId, AgentTaskResult? Result)> ExecuteIterativeTaskWithProgressAsync(
         AgentTaskService taskService,
+        ConsoleLogService logService,
         string prompt,
         string? outputPath)
     {
         string? taskId = null;
         AgentTaskResult? result = null;
+
+        logService.LogSection("ITERATIVE RESEARCH TASK");
+        logService.Log($"Query: {prompt}");
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
@@ -1170,25 +1180,31 @@ internal static partial class Program
             .StartAsync("Submitting iterative research task...", async ctx =>
             {
                 taskId = await taskService.SubmitIterativeResearchTaskAsync(prompt, outputPath).ConfigureAwait(false);
+                logService.Log($"Task submitted: {taskId}");
                 ctx.Status("[cyan]Task submitted.[/] Waiting for iterative research to complete...");
-                result = await WaitForResultWithProgressAsync(taskService, taskId, ctx).ConfigureAwait(false);
+                result = await WaitForResultWithProgressAsync(taskService, logService, taskId, ctx)
+                    .ConfigureAwait(false);
             }).ConfigureAwait(false);
 
         return (taskId, result);
     }
 
-    private static async Task SubmitAsyncResearchTaskAsync(AgentTaskService taskService, string prompt)
+    private static async Task SubmitAsyncResearchTaskAsync(
+        AgentTaskService taskService,
+        ConsoleLogService logService,
+        string prompt)
     {
         // Extract output path from prompt if specified (e.g., "... save to F:\file.md" or "Put your report in F:\file.md")
         var outputPath = ExtractOutputPath(prompt);
 
         try
         {
-            var (_, result) = await ExecuteTaskWithProgressAsync(taskService, prompt, outputPath).ConfigureAwait(false);
+            var (_, result) = await ExecuteTaskWithProgressAsync(taskService, logService, prompt, outputPath).ConfigureAwait(false);
             await HandleTaskResultAsync(result, outputPath).ConfigureAwait(false);
         }
         catch (StackExchange.Redis.RedisException ex)
         {
+            logService.LogError("Redis error during async research", ex);
             AnsiConsole.MarkupLine("[yellow]Redis error:[/] " + Markup.Escape(ex.Message));
             AnsiConsole.MarkupLine("[dim]Falling back to synchronous execution...[/]");
             await RunSynchronousResearchAsync(prompt).ConfigureAwait(false);
@@ -1197,11 +1213,15 @@ internal static partial class Program
 
     private static async Task<(string? TaskId, AgentTaskResult? Result)> ExecuteTaskWithProgressAsync(
         AgentTaskService taskService,
+        ConsoleLogService logService,
         string prompt,
         string? outputPath)
     {
         string? taskId = null;
         AgentTaskResult? result = null;
+
+        logService.LogSection("RESEARCH TASK");
+        logService.Log($"Query: {prompt}");
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
@@ -1209,8 +1229,9 @@ internal static partial class Program
             .StartAsync("Submitting task to agent worker...", async ctx =>
             {
                 taskId = await taskService.SubmitResearchTaskAsync(prompt, outputPath).ConfigureAwait(false);
+                logService.Log($"Task submitted: {taskId}");
                 ctx.Status("[cyan]Task submitted.[/] Waiting for agent worker to process...");
-                result = await WaitForResultWithProgressAsync(taskService, taskId, ctx).ConfigureAwait(false);
+                result = await WaitForResultWithProgressAsync(taskService, logService, taskId, ctx).ConfigureAwait(false);
             }).ConfigureAwait(false);
 
         return (taskId, result);
@@ -1218,63 +1239,186 @@ internal static partial class Program
 
     private static async Task<AgentTaskResult?> WaitForResultWithProgressAsync(
         AgentTaskService taskService,
+        ConsoleLogService logService,
         string taskId,
         StatusContext ctx)
     {
-        var startTime = TimeProvider.System.GetUtcNow();
-        var timeout = TimeSpan.FromMinutes(5);
-        AgentTaskResult? result = null;
-        var lastProgressMessage = string.Empty;
-
-        // Create a cancellation source that we'll cancel when the task completes
+        var state = new ProgressState();
         using var progressCts = new CancellationTokenSource();
 
         // Subscribe to progress updates in the background
         _ = taskService.SubscribeToProgressAsync(
             taskId,
-            progress => lastProgressMessage = FormatProgressMessage(progress),
+            progress => HandleProgressUpdate(progress, state, logService),
             progressCts.Token);
 
-        while (result is null && (TimeProvider.System.GetUtcNow() - startTime) < timeout)
-        {
-            result = await taskService.WaitForResultAsync(taskId, TimeSpan.FromSeconds(2), progressCts.Token).ConfigureAwait(false);
+        var result = await PollForResultAsync(taskService, logService, taskId, state, ctx, progressCts.Token)
+            .ConfigureAwait(false);
 
-            if (result is null)
-            {
-                var elapsed = TimeProvider.System.GetUtcNow() - startTime;
-                var statusMsg = string.IsNullOrEmpty(lastProgressMessage)
-                    ? string.Create(CultureInfo.InvariantCulture, $"[cyan]Processing...[/] [dim]({elapsed.TotalSeconds:F0}s elapsed)[/]")
-                    : string.Create(CultureInfo.InvariantCulture, $"{lastProgressMessage} [dim]({elapsed.TotalSeconds:F0}s)[/]");
-                ctx.Status(statusMsg);
-            }
-        }
-
-        // Cancel the progress subscription
         await progressCts.CancelAsync().ConfigureAwait(false);
+
+        if (result is not null)
+        {
+            logService.Log("Task completed with status: " + result.Status);
+        }
 
         return result;
     }
 
-    private static string FormatProgressMessage(AgentTaskProgress progress)
+    private static void HandleProgressUpdate(AgentTaskProgress progress, ProgressState state, ConsoleLogService logService)
     {
-        if (progress.ToolName is null)
+        state.LastProgressMessage = progress.Message;
+        state.LastProgressTime = TimeProvider.System.GetUtcNow();
+
+        if (!string.IsNullOrEmpty(progress.AgentName))
         {
-            return Markup.Escape(progress.Message);
+            state.CurrentAgentName = progress.AgentName;
         }
 
-        var messageWithoutToolPrefix = progress.Message.Replace(
-            $"{progress.ToolName}: ",
-            string.Empty,
-            StringComparison.Ordinal);
+        if (!string.IsNullOrEmpty(progress.ModelId))
+        {
+            state.CurrentModelId = progress.ModelId;
+        }
 
-        return $"[yellow][[Tool]][/] {Markup.Escape(progress.ToolName)}: {Markup.Escape(messageWithoutToolPrefix)}";
+        // Only print if this is a new message
+        if (!string.Equals(progress.Message, state.LastPrintedMessage, StringComparison.Ordinal))
+        {
+            state.LastPrintedMessage = progress.Message;
+            AnsiConsole.MarkupLine(FormatProgressLine(progress, state.StartTime));
+            logService.LogProgress(progress.AgentName, progress.Message, progress.InputTokens, progress.OutputTokens);
+        }
     }
+
+    private static async Task<AgentTaskResult?> PollForResultAsync(
+        AgentTaskService taskService,
+        ConsoleLogService logService,
+        string taskId,
+        ProgressState state,
+        StatusContext ctx,
+        CancellationToken cancellationToken)
+    {
+        var inactivityTimeout = TimeSpan.FromMinutes(60);
+        AgentTaskResult? result = null;
+
+        while (result is null)
+        {
+            var timeSinceLastProgress = TimeProvider.System.GetUtcNow() - state.LastProgressTime;
+            if (timeSinceLastProgress >= inactivityTimeout)
+            {
+                logService.Log("Task timed out due to inactivity");
+                break;
+            }
+
+            result = await taskService.WaitForResultAsync(taskId, TimeSpan.FromSeconds(2), cancellationToken)
+                .ConfigureAwait(false);
+
+            if (result is null)
+            {
+                ctx.Status(BuildStatusMessage(state));
+            }
+        }
+
+        return result;
+    }
+
+    private static string BuildStatusMessage(ProgressState state)
+    {
+        var elapsed = TimeProvider.System.GetUtcNow() - state.StartTime;
+        var contextInfo = BuildContextInfo(state.CurrentAgentName, state.CurrentModelId);
+
+        return string.IsNullOrEmpty(state.LastProgressMessage)
+            ? string.Create(CultureInfo.InvariantCulture, $"{contextInfo}[dim]Processing... ({elapsed.TotalSeconds:F0}s)[/]")
+            : string.Create(CultureInfo.InvariantCulture, $"{contextInfo}[dim]{elapsed.TotalSeconds:F0}s elapsed[/]");
+    }
+
+    private static string BuildContextInfo(string? agentName, string? modelId)
+    {
+        var parts = new List<string>(2);
+
+        if (!string.IsNullOrEmpty(agentName))
+        {
+            parts.Add("[cyan]" + agentName + "[/]");
+        }
+
+        if (!string.IsNullOrEmpty(modelId))
+        {
+            parts.Add("[dim]" + modelId + "[/]");
+        }
+
+        return parts.Count > 0 ? string.Join(' ', parts) + " - " : string.Empty;
+    }
+
+    private static string FormatProgressLine(AgentTaskProgress progress, DateTimeOffset startTime)
+    {
+        var elapsed = TimeProvider.System.GetUtcNow() - startTime;
+        var timestamp = string.Create(CultureInfo.InvariantCulture, $"[dim][{elapsed.TotalSeconds,6:F0}s][/]");
+        var tokenInfo = BuildTokenInfo(progress.InputTokens, progress.OutputTokens);
+        var escapedMessage = Markup.Escape(progress.Message);
+
+        return GetColoredMessage(progress.Message, timestamp, escapedMessage, tokenInfo);
+    }
+
+    private static string BuildTokenInfo(int? inputTokens, int? outputTokens)
+    {
+        if (!inputTokens.HasValue && !outputTokens.HasValue)
+        {
+            return string.Empty;
+        }
+
+        var inTokens = inputTokens?.ToString("N0", CultureInfo.InvariantCulture) ?? "?";
+        var outTokens = outputTokens?.ToString("N0", CultureInfo.InvariantCulture) ?? "?";
+        return " [dim][[" + inTokens + "→" + outTokens + "]][/]";
+    }
+
+    private static string GetColoredMessage(string message, string timestamp, string escapedMessage, string tokenInfo)
+    {
+        // Headers
+        if (IsHeaderMessage(message))
+        {
+            return timestamp + " [yellow]" + escapedMessage + "[/]" + tokenInfo;
+        }
+
+        // Success indicators
+        if (message.Contains('✓', StringComparison.Ordinal) ||
+            message.Contains("COMPLETE", StringComparison.OrdinalIgnoreCase))
+        {
+            return timestamp + " [green]" + escapedMessage + "[/]" + tokenInfo;
+        }
+
+        // Warning indicators
+        if (message.Contains('⚠', StringComparison.Ordinal) ||
+            message.Contains("WARNING", StringComparison.OrdinalIgnoreCase))
+        {
+            return timestamp + " [yellow]" + escapedMessage + "[/]" + tokenInfo;
+        }
+
+        // Failure indicators
+        if (message.Contains("FAIL", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains('✗', StringComparison.Ordinal))
+        {
+            return timestamp + " [red]" + escapedMessage + "[/]" + tokenInfo;
+        }
+
+        // Indented lines
+        return message.StartsWith("  ", StringComparison.Ordinal)
+            ? timestamp + " [cyan]" + escapedMessage + "[/]" + tokenInfo
+            : timestamp + " " + escapedMessage + tokenInfo;
+    }
+
+    private static bool IsHeaderMessage(string message) =>
+        message.Contains('═', StringComparison.Ordinal) ||
+        message.Contains('─', StringComparison.Ordinal) ||
+        message.StartsWith("PHASE", StringComparison.OrdinalIgnoreCase) ||
+        message.StartsWith("DEEP RESEARCH", StringComparison.OrdinalIgnoreCase) ||
+        message.StartsWith("RESEARCH COMPLETE", StringComparison.OrdinalIgnoreCase);
 
     private static async Task HandleTaskResultAsync(AgentTaskResult? result, string? outputPath)
     {
         if (result is null)
         {
-            AnsiConsole.MarkupLine("[yellow]Task timed out after 5 minutes. Check back later with 'Check Pending Tasks'.[/]\n");
+            AnsiConsole.MarkupLine(
+                "[yellow]Task timed out after 60 minutes of inactivity. " +
+                "Check back later with 'Check Pending Tasks'.[/]\n");
             return;
         }
 
@@ -1653,11 +1797,31 @@ internal static partial class Program
     /// <param name="Telemetry">Telemetry setup for tracing.</param>
     /// <param name="ModelService">OpenRouter model service.</param>
     /// <param name="TaskService">Agent task service for async task submission.</param>
+    /// <param name="LogService">Console log service for file-based logging.</param>
     private sealed record CommandContext(
         SpamFilterSettings SpamSettings,
         Configuration.A2ASettings A2ASettings,
         RedisSettings RedisSettings,
         TelemetrySetup Telemetry,
         OpenRouterModelService ModelService,
-        AgentTaskService? TaskService);
+        AgentTaskService? TaskService,
+        ConsoleLogService LogService);
+
+    /// <summary>
+    /// Tracks progress state during task execution.
+    /// </summary>
+    private sealed class ProgressState
+    {
+        public DateTimeOffset StartTime { get; } = TimeProvider.System.GetUtcNow();
+
+        public DateTimeOffset LastProgressTime { get; set; } = TimeProvider.System.GetUtcNow();
+
+        public string LastProgressMessage { get; set; } = string.Empty;
+
+        public string LastPrintedMessage { get; set; } = string.Empty;
+
+        public string? CurrentAgentName { get; set; }
+
+        public string? CurrentModelId { get; set; }
+    }
 }

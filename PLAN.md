@@ -1,6 +1,6 @@
 ---
 title: "PLAN.md"
-version: "1.0.15"
+version: "1.0.16"
 lastModified: "2025-12-17"
 author: "HemSoft"
 purpose: "MS Agent Framework Migration Plan"
@@ -268,6 +268,49 @@ public record ResearchEvaluation(
 
 ---
 
+## Phase 9.7: Console Refactoring (UI Migration Prep) 🔴
+
+**Goal:** Reduce `Program.cs` from **1450 lines** to under **500 lines** to prepare for future UI migration.
+
+### Rationale
+
+The console application has accumulated too much logic in `Program.cs`. This creates:
+
+- Friction when migrating to a web/desktop UI
+- Testing difficulties (entry point vs. testable services)
+- Code duplication risk when supporting multiple front-ends
+
+### Extraction Targets
+
+| Logic Block | Target Location | Estimated Lines |
+|-------------|-----------------|----------------|
+| Chat loop orchestration | `ChatService` | ~200 |
+| Menu rendering/handling | `MenuService` | ~150 |
+| Model selection logic | `ModelSelectionService` | ~100 |
+| Agent command handling | `AgentCommandService` | ~200 |
+| Tool configuration | `ToolConfigurationService` | ~150 |
+| Output formatting | `ConsoleOutputService` | ~100 |
+
+### Tasks
+
+- [ ] **9.7.1** Create `ChatService` - extract main chat loop orchestration
+- [ ] **9.7.2** Create `MenuService` - extract menu rendering and input handling
+- [ ] **9.7.3** Create `ModelSelectionService` - extract model/provider selection
+- [ ] **9.7.4** Create `AgentCommandService` - extract `/agents` command handling
+- [ ] **9.7.5** Create `ToolConfigurationService` - extract tool setup logic
+- [ ] **9.7.6** Create `ConsoleOutputService` - extract output formatting helpers
+- [ ] **9.7.7** Refactor `Program.cs` to compose services (target: <500 LOC)
+- [ ] **9.7.8** Add unit tests for extracted services
+
+### Success Criteria
+
+- [ ] `Program.cs` under 500 lines
+- [ ] All extracted services have unit tests
+- [ ] No behavior changes (pure refactoring)
+- [ ] Build succeeds with no warnings
+
+---
+
 ## Phase 10: Multi-Agent Orchestration 🟡
 
 After event-driven foundation is solid, add workflow orchestration.
@@ -307,7 +350,8 @@ After event-driven foundation is solid, add workflow orchestration.
 - ✅ Phase 9.3 complete - Async task flow in Console with `AgentTaskService`
 - ✅ Phase 9.5 complete - Worker separated into `HemSoft.PowerAI.AgentWorker`
 - ✅ Phase 9.6 complete - Iterative Research with EvaluatorAgent
-- 🚧 **Next:** Phase 10 - Multi-Agent Orchestration
+- � **Priority:** Phase 9.7 - Console Refactoring (Program.cs at 1450 LOC, target <500)
+- 🟡 **Queued:** Phase 10 - Multi-Agent Orchestration
 
 ---
 

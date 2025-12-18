@@ -1,7 +1,7 @@
 ---
 title: "ARCHITECTURE.md"
-version: "1.1.0"
-lastModified: "2025-12-16"
+version: "1.2.0"
+lastModified: "2025-12-17"
 author: "HemSoft"
 purpose: "System architecture for HemSoft Power AI"
 ---
@@ -324,6 +324,28 @@ All operations within a task share a correlation ID:
 - TLS 1.2+ for encrypted connections
 - Authentication via connection string
 - Network isolation in production
+
+---
+
+## Design Principles
+
+### UI Migration Readiness
+
+**Intent:** The console application should remain a thin presentation layer to minimize friction when migrating to a different front-end (e.g., web UI, desktop app, mobile).
+
+**Constraints:**
+
+- `Program.cs` must stay under **500 lines** of code
+- Business logic belongs in service classes, not the console entry point
+- Extract reusable patterns into `HemSoft.PowerAI.Shared` or dedicated service projects
+- The console should only handle: user input, output rendering, and service orchestration
+
+**Rationale:** We anticipate moving to a real UI in the future. By keeping the console lean, we ensure:
+
+- Core functionality is decoupled from the presentation layer
+- Testing is easier (services vs. console entry point)
+- Migration effort is reduced to building a new UI that consumes existing services
+- No duplication of logic when supporting multiple front-ends
 
 ---
 

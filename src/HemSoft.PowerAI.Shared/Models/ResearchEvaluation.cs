@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 
 /// <summary>
 /// Represents the EvaluatorAgent's assessment of research findings.
+/// Can also contain a research plan when decomposing the initial query.
 /// </summary>
 /// <param name="IsSatisfactory">Whether the research meets quality threshold.</param>
 /// <param name="QualityScore">Quality score from 1-10.</param>
@@ -16,6 +17,7 @@ using System.Text.Json.Serialization;
 /// <param name="FollowUpQuestions">Suggested questions for deeper research.</param>
 /// <param name="RefinedQuery">Suggested refined query for next iteration, null if satisfactory.</param>
 /// <param name="Reasoning">Brief explanation of the evaluation.</param>
+/// <param name="SubTasks">Sub-tasks for decomposition (only on initial planning phase).</param>
 public sealed record ResearchEvaluation(
     [property: JsonPropertyName("isSatisfactory")]
     bool IsSatisfactory,
@@ -33,8 +35,16 @@ public sealed record ResearchEvaluation(
     string? RefinedQuery,
 
     [property: JsonPropertyName("reasoning")]
-    string Reasoning)
+    string Reasoning,
+
+    [property: JsonPropertyName("subTasks")]
+    ImmutableArray<ResearchSubTask>? SubTasks = null)
 {
+    /// <summary>
+    /// Gets a value indicating whether this evaluation contains a research plan.
+    /// </summary>
+    public bool HasResearchPlan => this.SubTasks is { Length: > 0 };
+
     /// <summary>
     /// Creates a default satisfactory evaluation for when parsing fails.
     /// </summary>

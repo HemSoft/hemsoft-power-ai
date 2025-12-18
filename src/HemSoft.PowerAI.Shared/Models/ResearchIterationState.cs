@@ -6,6 +6,7 @@ namespace HemSoft.PowerAI.Common.Models;
 
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Text;
 
 /// <summary>
 /// Represents the complete state of an iterative research session.
@@ -50,10 +51,38 @@ public sealed class ResearchIterationState(string originalQuery, TimeProvider ti
 
     /// <summary>
     /// Gets all findings concatenated from all iterations.
+    /// Preserves full markdown content from each iteration with clear section demarcation.
     /// </summary>
-    public string AllFindings =>
-        string.Join("\n\n---\n\n", this.iterations.Select(i =>
-            string.Format(CultureInfo.InvariantCulture, "## Iteration {0}: {1}\n\n{2}", i.IterationNumber, i.Query, i.Findings)));
+    public string AllFindings
+    {
+        get
+        {
+            if (this.iterations.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            // Build findings with clear section headers that preserve markdown structure
+            var sb = new StringBuilder();
+            foreach (var i in this.iterations)
+            {
+                if (sb.Length > 0)
+                {
+                    // Clear separator between iterations
+                    sb.AppendLine()
+                      .AppendLine("---")
+                      .AppendLine();
+                }
+
+                // Header for this iteration's findings, preserve full content
+                sb.AppendLine(CultureInfo.InvariantCulture, $"## Iteration {i.IterationNumber}: {i.Query}")
+                  .AppendLine()
+                  .AppendLine(i.Findings?.Trim());
+            }
+
+            return sb.ToString();
+        }
+    }
 
     /// <summary>
     /// Adds a new iteration to the state.

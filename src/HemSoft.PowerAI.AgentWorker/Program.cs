@@ -24,9 +24,16 @@ builder.Configuration.GetSection(RedisSettings.SectionName).Bind(redisSettings);
 builder.Services.Configure<AgentHostSettings>(
     builder.Configuration.GetSection(AgentHostSettings.SectionName));
 
-// Register Redis broker as singleton
-builder.Services.AddSingleton<IAgentTaskBroker>(_ =>
-    new RedisAgentTaskBroker(redisSettings.ConnectionString));
+// Register result storage service for large payloads
+builder.Services.AddSingleton<IResultStorageService>(_ =>
+    new RedisResultStorageService(redisSettings.ConnectionString));
+
+// Register Redis broker as singleton with result storage (DI owns storage, not broker)
+builder.Services.AddSingleton<IAgentTaskBroker>(sp =>
+{
+    var resultStorage = sp.GetRequiredService<IResultStorageService>();
+    return new RedisAgentTaskBroker(redisSettings.ConnectionString, resultStorage, ownsResultStorage: false);
+});
 
 // Register the worker service
 builder.Services.AddHostedService<AgentWorkerService>();

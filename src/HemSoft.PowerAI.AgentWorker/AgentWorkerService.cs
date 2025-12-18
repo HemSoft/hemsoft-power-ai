@@ -6,18 +6,14 @@ namespace HemSoft.PowerAI.AgentWorker;
 
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 using A2A;
 
 using HemSoft.PowerAI.AgentWorker.Configuration;
-using HemSoft.PowerAI.Common.Agents;
 using HemSoft.PowerAI.Common.Models;
 using HemSoft.PowerAI.Common.Services;
 
-using Microsoft.Agents.AI;
 using Microsoft.Extensions.Options;
 
 using AgentTaskStatus = HemSoft.PowerAI.Common.Models.AgentTaskStatus;
@@ -29,36 +25,6 @@ using AgentTaskStatus = HemSoft.PowerAI.Common.Models.AgentTaskStatus;
 [ExcludeFromCodeCoverage(Justification = "Background service requires Redis infrastructure for integration testing.")]
 internal sealed partial class AgentWorkerService : BackgroundService
 {
-    private const int MaxIterations = 5;
-    private const int QualityThreshold = 7;
-
-    private static readonly CompositeFormat EvaluationPromptFormat = CompositeFormat.Parse("""
-        ## Original Research Question
-        {0}
-
-        ## Current Query
-        {1}
-
-        ## Research Findings
-        {2}
-
-        ---
-        Please evaluate these findings and respond with your JSON assessment.
-        """);
-
-    private static readonly CompositeFormat SynthesisPromptFormat = CompositeFormat.Parse("""
-        ## Original Question
-        {0}
-
-        ## Research Findings (from {1} iterations)
-        {2}
-
-        ---
-        Please synthesize these findings into a comprehensive, well-organized response
-        that directly answers the original question. Combine insights from all iterations,
-        remove redundancy, and present the most complete picture possible.
-        """);
-
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -161,32 +127,8 @@ internal sealed partial class AgentWorkerService : BackgroundService
     [LoggerMessage(Level = LogLevel.Information, Message = "AgentHost resolved agent: {AgentName}")]
     private static partial void LogAgentResolved(ILogger logger, string agentName);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Iteration {IterationNum}: Researching \"{Query}\"")]
-    private static partial void LogIterationResearching(ILogger logger, int iterationNum, string query);
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "Iteration {IterationNum}: Evaluating findings")]
-    private static partial void LogIterationEvaluating(ILogger logger, int iterationNum);
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "Iteration {IterationNum}: Score {Score}/10, Satisfactory: {IsSatisfactory}")]
-    private static partial void LogIterationComplete(ILogger logger, int iterationNum, int score, bool isSatisfactory);
-
-    [GeneratedRegex(
-        @"```(?:json)?\s*(?<json>[\s\S]*?)\s*```",
-        RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture | RegexOptions.NonBacktracking,
-        matchTimeoutMilliseconds: 1000)]
-    private static partial Regex JsonBlockRegex();
-
-    private static string GetNextQuery(ResearchEvaluation evaluation, string fallbackQuery)
-    {
-        var refinedQuery = evaluation.RefinedQuery;
-        if (!string.IsNullOrWhiteSpace(refinedQuery))
-        {
-            return refinedQuery;
-        }
-
-        var followUpQuestions = evaluation.FollowUpQuestions;
-        return followUpQuestions.Length > 0 ? followUpQuestions[0] : fallbackQuery;
-    }
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Message}")]
+    private static partial void LogProgress(ILogger logger, string message);
 
     private static JsonDocument BuildIterativeResultJson(
         ResearchIterationState state,
@@ -210,75 +152,6 @@ internal sealed partial class AgentWorkerService : BackgroundService
         return JsonDocument.Parse(json);
     }
 
-    private static async Task<ResearchEvaluation> RunEvaluationAsync(
-        AIAgent agent,
-        string originalQuery,
-        string currentQuery,
-        string findings,
-        CancellationToken cancellationToken)
-    {
-        var evalPrompt = string.Format(
-            CultureInfo.InvariantCulture,
-            EvaluationPromptFormat,
-            originalQuery,
-            currentQuery,
-            findings);
-
-        var response = await agent.RunAsync(evalPrompt, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        return ParseEvaluation(response.Text ?? string.Empty);
-    }
-
-    private static async Task<string> SynthesizeAsync(
-        AIAgent agent,
-        ResearchIterationState state,
-        CancellationToken cancellationToken)
-    {
-        if (state.Iterations.Count == 1)
-        {
-            return state.Iterations[0].Findings;
-        }
-
-        var synthesisPrompt = string.Format(
-            CultureInfo.InvariantCulture,
-            SynthesisPromptFormat,
-            state.OriginalQuery,
-            state.Iterations.Count,
-            state.AllFindings);
-
-        var response = await agent.RunAsync(synthesisPrompt, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        return response.Text ?? state.AllFindings;
-    }
-
-    private static ResearchEvaluation ParseEvaluation(string response)
-    {
-        try
-        {
-            var jsonMatch = JsonBlockRegex().Match(response);
-            var json = jsonMatch.Success ? jsonMatch.Groups["json"].Value : response;
-
-            if (!json.TrimStart().StartsWith('{'))
-            {
-                var startIndex = json.IndexOf('{', StringComparison.Ordinal);
-                var endIndex = json.LastIndexOf('}');
-                if (startIndex >= 0 && endIndex > startIndex)
-                {
-                    json = json[startIndex..(endIndex + 1)];
-                }
-            }
-
-            return JsonSerializer.Deserialize<ResearchEvaluation>(json, SerializerOptions)
-                ?? ResearchEvaluation.CreateDefault();
-        }
-        catch (JsonException)
-        {
-            return ResearchEvaluation.CreateDefault();
-        }
-    }
-
     private static Task ReportProgressAsync(AgentTaskContext? context, string message, CancellationToken cancellationToken) =>
         context?.ReportProgressAsync(message, cancellationToken) ?? Task.CompletedTask;
 
@@ -294,13 +167,25 @@ internal sealed partial class AgentWorkerService : BackgroundService
             _ => request.AgentType,
         };
 
+        // Determine the model ID based on agent type
+        var modelId = request.AgentType.ToUpperInvariant() switch
+        {
+            "RESEARCH" => HemSoft.PowerAI.Common.Agents.ResearchAgent.DefaultModelId,
+            "ITERATIVE-RESEARCH" => HemSoft.PowerAI.Common.Agents.ResearchAgent.DefaultModelId,
+            _ => "unknown",
+        };
+
         LogBannerTop(this.logger);
         LogBannerAgent(this.logger, agentName);
         LogBannerTask(this.logger, request.TaskId);
         LogBannerBottom(this.logger);
 
-        // Set up task context for progress reporting
-        var taskContext = new AgentTaskContext(request.TaskId, this.broker, this.timeProvider);
+        // Set up task context for progress reporting with agent info
+        var taskContext = new AgentTaskContext(request.TaskId, this.broker, this.timeProvider)
+        {
+            CurrentAgentName = agentName,
+            CurrentModelId = modelId,
+        };
         using var scope = AgentTaskContext.SetCurrent(taskContext);
 
         AgentTaskResult result;
@@ -417,38 +302,22 @@ internal sealed partial class AgentWorkerService : BackgroundService
         CancellationToken cancellationToken)
     {
         var taskContext = AgentTaskContext.Instance;
-        var state = new ResearchIterationState(prompt, this.timeProvider);
 
-        // Resolve the research agent from AgentHost via A2A
+        // Resolve the research agent name for logging
         LogCallingAgentHost(this.logger, this.agentHostUrl, prompt);
         var cardResolver = new A2ACardResolver(this.agentHostUrl);
         var agentCard = await cardResolver.GetAgentCardAsync(cancellationToken).ConfigureAwait(false);
 
         LogAgentResolved(this.logger, agentCard.Name);
 
-#pragma warning disable CA2016, MA0040 // Forward the CancellationToken parameter
-        var researchAgent = await cardResolver.GetAIAgentAsync().ConfigureAwait(false);
-#pragma warning restore CA2016, MA0040
-
-        // EvaluatorAgent runs locally (not exposed via A2A)
-        var evaluatorAgent = EvaluatorAgent.Create();
-
-        await ReportProgressAsync(taskContext, "Starting iterative research", cancellationToken)
+        await ReportProgressAsync(taskContext, "Starting decomposed iterative research", cancellationToken)
             .ConfigureAwait(false);
 
-        // Run iterations
-        await this.ExecuteResearchIterationsAsync(
-            state,
-            taskContext,
-            researchAgent,
-            evaluatorAgent,
-            prompt,
-            cancellationToken).ConfigureAwait(false);
+        // Use the new IterativeResearchService with task decomposition
+        var researchService = new IterativeResearchService(ReportProgressCallback);
 
-        // Synthesize final result
-        state.FinalSynthesis = await SynthesizeAsync(researchAgent, state, cancellationToken)
+        var state = await researchService.ResearchAsync(prompt, cancellationToken)
             .ConfigureAwait(false);
-        state.IsComplete = true;
 
         var completionMsg = string.Create(
             CultureInfo.InvariantCulture,
@@ -456,108 +325,12 @@ internal sealed partial class AgentWorkerService : BackgroundService
         await ReportProgressAsync(taskContext, completionMsg, cancellationToken).ConfigureAwait(false);
 
         return BuildIterativeResultJson(state, agentCard.Name, this.agentHostUrl, this.timeProvider);
-    }
 
-    private async Task ExecuteResearchIterationsAsync(
-        ResearchIterationState state,
-        AgentTaskContext? taskContext,
-        AIAgent researchAgent,
-        AIAgent evaluatorAgent,
-        string originalPrompt,
-        CancellationToken cancellationToken)
-    {
-        var currentQuery = originalPrompt;
-
-        while (state.CurrentIteration < MaxIterations && !cancellationToken.IsCancellationRequested)
+        // Local function for progress reporting to both logs and task context
+        void ReportProgressCallback(string message)
         {
-            var iterationNum = state.CurrentIteration + 1;
-            var iterationContext = new IterationContext(
-                state,
-                taskContext,
-                researchAgent,
-                evaluatorAgent,
-                currentQuery,
-                originalPrompt,
-                iterationNum);
-
-            var (evaluation, shouldContinue) = await this.ExecuteSingleIterationAsync(
-                iterationContext,
-                cancellationToken).ConfigureAwait(false);
-
-            if (!shouldContinue)
-            {
-                break;
-            }
-
-            currentQuery = GetNextQuery(evaluation, currentQuery);
-            if (string.Equals(currentQuery, originalPrompt, StringComparison.Ordinal))
-            {
-                break;
-            }
+            LogProgress(this.logger, message);
+            _ = ReportProgressAsync(taskContext, message, cancellationToken);
         }
     }
-
-    private async Task<(ResearchEvaluation Evaluation, bool ShouldContinue)> ExecuteSingleIterationAsync(
-        IterationContext ctx,
-        CancellationToken cancellationToken)
-    {
-        // Step 1: Research via AgentHost
-        var researchMsg = string.Create(CultureInfo.InvariantCulture, $"Iteration {ctx.IterationNum}: Researching...");
-        await ReportProgressAsync(ctx.TaskContext, researchMsg, cancellationToken).ConfigureAwait(false);
-        LogIterationResearching(this.logger, ctx.IterationNum, ctx.CurrentQuery);
-
-        var researchResponse = await ctx.ResearchAgent.RunAsync(ctx.CurrentQuery, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        var findings = researchResponse.Text ?? "No findings returned.";
-
-        // Step 2: Evaluate locally
-        var evalMsg = string.Create(CultureInfo.InvariantCulture, $"Iteration {ctx.IterationNum}: Evaluating findings...");
-        await ReportProgressAsync(ctx.TaskContext, evalMsg, cancellationToken).ConfigureAwait(false);
-        LogIterationEvaluating(this.logger, ctx.IterationNum);
-
-        var evaluation = await RunEvaluationAsync(
-            ctx.EvaluatorAgent,
-            ctx.OriginalPrompt,
-            ctx.CurrentQuery,
-            findings,
-            cancellationToken).ConfigureAwait(false);
-
-        // Step 3: Record iteration
-        ctx.State.AddIteration(ctx.CurrentQuery, findings, evaluation);
-        LogIterationComplete(this.logger, ctx.IterationNum, evaluation.QualityScore, evaluation.IsSatisfactory);
-
-        var scoreMsg = string.Create(
-            CultureInfo.InvariantCulture,
-            $"Iteration {ctx.IterationNum}: Score {evaluation.QualityScore}/10, Satisfactory: {evaluation.IsSatisfactory}");
-        await ReportProgressAsync(ctx.TaskContext, scoreMsg, cancellationToken).ConfigureAwait(false);
-
-        // Step 4: Check if done
-        if (evaluation.IsSatisfactory || evaluation.QualityScore >= QualityThreshold)
-        {
-            await ReportProgressAsync(ctx.TaskContext, "Research meets quality threshold, synthesizing...", cancellationToken)
-                .ConfigureAwait(false);
-            return (evaluation, ShouldContinue: false);
-        }
-
-        return (evaluation, ShouldContinue: true);
-    }
-
-    /// <summary>
-    /// Context for a single research iteration.
-    /// </summary>
-    /// <param name="State">The research iteration state.</param>
-    /// <param name="TaskContext">The task context for progress reporting.</param>
-    /// <param name="ResearchAgent">The research agent.</param>
-    /// <param name="EvaluatorAgent">The evaluator agent.</param>
-    /// <param name="CurrentQuery">The current query being researched.</param>
-    /// <param name="OriginalPrompt">The original prompt from the user.</param>
-    /// <param name="IterationNum">The current iteration number.</param>
-    private sealed record IterationContext(
-        ResearchIterationState State,
-        AgentTaskContext? TaskContext,
-        AIAgent ResearchAgent,
-        AIAgent EvaluatorAgent,
-        string CurrentQuery,
-        string OriginalPrompt,
-        int IterationNum);
 }

@@ -45,6 +45,26 @@ public sealed class AgentTaskContext
     public string TaskId { get; }
 
     /// <summary>
+    /// Gets or sets the current agent name for progress reporting.
+    /// </summary>
+    public string? CurrentAgentName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the current model ID for progress reporting.
+    /// </summary>
+    public string? CurrentModelId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the cumulative input tokens for the current agent.
+    /// </summary>
+    public int InputTokens { get; set; }
+
+    /// <summary>
+    /// Gets or sets the cumulative output tokens for the current agent.
+    /// </summary>
+    public int OutputTokens { get; set; }
+
+    /// <summary>
     /// Sets the current task context for the async flow.
     /// </summary>
     /// <param name="context">The context to set.</param>
@@ -69,7 +89,11 @@ public sealed class AgentTaskContext
             TaskId: this.TaskId,
             Message: message,
             Timestamp: this.timeProvider.GetUtcNow(),
-            ToolName: null);
+            ToolName: null,
+            AgentName: this.CurrentAgentName,
+            ModelId: this.CurrentModelId,
+            InputTokens: this.InputTokens > 0 ? this.InputTokens : null,
+            OutputTokens: this.OutputTokens > 0 ? this.OutputTokens : null);
 
         return this.broker.PublishProgressAsync(progress, cancellationToken);
     }
@@ -87,9 +111,24 @@ public sealed class AgentTaskContext
             TaskId: this.TaskId,
             Message: message,
             Timestamp: this.timeProvider.GetUtcNow(),
-            ToolName: toolName);
+            ToolName: toolName,
+            AgentName: this.CurrentAgentName,
+            ModelId: this.CurrentModelId,
+            InputTokens: this.InputTokens > 0 ? this.InputTokens : null,
+            OutputTokens: this.OutputTokens > 0 ? this.OutputTokens : null);
 
         return this.broker.PublishProgressAsync(progress, cancellationToken);
+    }
+
+    /// <summary>
+    /// Updates token usage from a chat response.
+    /// </summary>
+    /// <param name="inputTokens">Input tokens from this response.</param>
+    /// <param name="outputTokens">Output tokens from this response.</param>
+    public void AddTokenUsage(int inputTokens, int outputTokens)
+    {
+        this.InputTokens += inputTokens;
+        this.OutputTokens += outputTokens;
     }
 
     private sealed class ContextScope(AgentTaskContext? previous) : IDisposable
